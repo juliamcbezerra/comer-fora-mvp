@@ -18,7 +18,7 @@ export default function NotFound() {
               />
               <span aria-hidden="true" className="h-4 w-px bg-neutral-200" />
               <span className="text-xs font-bold text-[#3F3E3E]">
-                Comer Fora Impulso
+                Comer Fora Up
               </span>
             </div>
             <span className="rounded-md bg-neutral-100 px-2 py-0.5 text-[10px] font-bold uppercase text-[#717171]">

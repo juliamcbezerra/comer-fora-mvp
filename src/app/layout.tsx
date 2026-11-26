@@ -12,9 +12,9 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "iFood | Comer Fora Impulso",
+  title: "iFood | Comer Fora Up",
   description:
-    "Central de ativação presencial para restaurantes parceiros do iFood Comer Fora.",
+    "Comer Fora Up — Central de ativação presencial para restaurantes parceiros do iFood Comer Fora.",
   icons: {
     icon: "/ifood-logo.png",
   },

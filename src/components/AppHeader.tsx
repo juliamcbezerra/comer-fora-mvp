@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ArrowUp, Loader2 } from "lucide-react";
 import { startTopProgress } from "@/components/TopProgressBar";
 import { cn } from "@/lib/utils";
 
@@ -136,8 +136,15 @@ export function AppHeader({
                 aria-hidden="true"
                 className="h-5 w-px bg-neutral-200"
               />
-              <span className="text-sm font-bold tracking-tight text-[#1A1A1A] sm:text-base">
-                Comer Fora Impulso
+              <span className="inline-flex items-baseline gap-1 text-sm font-bold tracking-tight text-[#1A1A1A] sm:text-base">
+                <span>Comer Fora</span>
+                <span className="inline-flex items-center gap-0.5 text-base font-extrabold text-[#EA1D2C] sm:text-lg">
+                  Up
+                  <ArrowUp
+                    className="h-4 w-4 shrink-0 stroke-[2.75]"
+                    aria-hidden="true"
+                  />
+                </span>
               </span>
             </Link>
 

@@ -1,4 +1,4 @@
-# iFood | Comer Fora Impulso
+# iFood | Comer Fora Up
 
 > **Protótipo Conceitual • Ambiente de demonstração com dados fictícios**
 > Central Inteligente de Ativação Presencial para restaurantes parceiros do **iFood Comer Fora** — construída para o desafio iFood GenAI / AI Builder (Opção 2: *Restaurante que ganha*).
@@ -7,7 +7,7 @@
 
 ## 1. Visão Geral
 
-O **Comer Fora Impulso** combina **regras financeiras determinísticas**, **2 agentes especializados de IA generativa** (com saída JSON estruturada validada por Zod e fallback determinístico transparente), **aprovação humana obrigatória (Human-in-the-Loop)** e **persistência real em PostgreSQL (Supabase)** para ajudar restaurantes parceiros a:
+O **Comer Fora Up** combina **regras financeiras determinísticas**, **2 agentes especializados de IA generativa** (com saída JSON estruturada validada por Zod e fallback determinístico transparente), **aprovação humana obrigatória (Human-in-the-Loop)** e **persistência real em PostgreSQL (Supabase)** para ajudar restaurantes parceiros a:
 
 1. Diagnosticar gargalos e oportunidades de ocupação no salão nos horários de menor movimento.
 2. Planejar campanhas protegidas contra estouro de orçamento, erosão de margem (teto rígido de 30% do ticket médio) e superlotação operacional.

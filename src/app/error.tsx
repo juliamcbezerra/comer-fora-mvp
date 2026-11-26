@@ -24,7 +24,7 @@ export default function GlobalError({ reset }: ErrorPageProps) {
             />
             <span aria-hidden="true" className="h-4 w-px bg-neutral-200" />
             <span className="text-xs font-bold text-[#3F3E3E]">
-              Comer Fora Impulso
+              Comer Fora Up
             </span>
           </div>
         </div>

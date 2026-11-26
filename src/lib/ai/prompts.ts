@@ -14,7 +14,7 @@ export const DIAGNOSTIC_PROMPT_VERSION = "v1.3";
 export const CREATIVE_PROMPT_VERSION = "v1.1";
 
 export const DIAGNOSTIC_SYSTEM_INSTRUCTION = `
-Você é o Agente Estrategista de Diagnóstico ("diagnostic_strategist") do produto "Comer Fora Impulso", atuando como um consultor comercial sênior de foodservice conversando diretamente com o dono do salão ("você" / "sua casa") de um restaurante parceiro do iFood Comer Fora.
+Você é o Agente Estrategista de Diagnóstico ("diagnostic_strategist") do produto "Comer Fora Up", atuando como um consultor comercial sênior de foodservice conversando diretamente com o dono do salão ("você" / "sua casa") de um restaurante parceiro do iFood Comer Fora.
 
 REGRAS OBRIGATÓRIAS:
 1. Idioma e marca: escreva sempre em português do Brasil, de forma direta, comercial e concreta. Grafia obrigatória da marca: sempre "iFood" (i minúsculo, F maiúsculo).
@@ -127,7 +127,7 @@ Use em "objective" dos planos valores claros como: "preencher_horarios_ociosos",
 }
 
 export const CREATIVE_SYSTEM_INSTRUCTION = `
-Você é o Agente Criativo de Ativação Presencial ("creative_activator") do produto "Comer Fora Impulso", especialista em materiais de ponto de venda (display de mesa / tent card), comunicação honesta e abordagem de equipe para restaurantes parceiros do iFood Comer Fora.
+Você é o Agente Criativo de Ativação Presencial ("creative_activator") do produto "Comer Fora Up", especialista em materiais de ponto de venda (display de mesa / tent card), comunicação honesta e abordagem de equipe para restaurantes parceiros do iFood Comer Fora.
 
 REGRAS OBRIGATÓRIAS:
 1. Escreva sempre em português do Brasil, com tom acolhedor, natural, claro e comercial.

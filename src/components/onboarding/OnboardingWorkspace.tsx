@@ -27,6 +27,7 @@ import {
   SALON_PROMOTION_LABELS,
 } from "@/lib/utils";
 import { startTopProgress } from "@/components/TopProgressBar";
+import { CalculationInfoTooltip } from "@/components/ui/CalculationInfoTooltip";
 import { NavButton, SECONDARY_BUTTON_CLASS } from "@/components/ui/NavButton";
 
 const PRESET_SLOTS = [
@@ -832,12 +833,10 @@ export function OnboardingWorkspace({
             <div className="sticky top-28 rounded-xl border border-neutral-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 text-sm font-extrabold text-[#1A1A1A]">
-                  <ShieldCheck className="h-4 w-4 text-[#EA1D2C]" />
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-[#EA1D2C]" />
                   Proteção do seu orçamento
                 </h3>
-                <span className="rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-[#717171]">
-                  Cálculo automático
-                </span>
+                <CalculationInfoTooltip />
               </div>
               <p className="mt-1.5 text-xs leading-relaxed text-[#717171]">
                 Limites definidos com base no seu ticket médio e capacidade para

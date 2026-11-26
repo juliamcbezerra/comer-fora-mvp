@@ -695,7 +695,7 @@ export function CampaignReviewWorkspace({
               </div>
 
               <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-2.5 text-center text-[10px] font-semibold text-[#717171]">
-                iFood | Comer Fora Impulso • Protótipo Conceitual • Dados
+                iFood | Comer Fora Up • Protótipo Conceitual • Dados
                 Demonstrativos
               </div>
             </div>
