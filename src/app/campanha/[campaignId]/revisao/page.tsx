@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { AppFooter } from "@/components/AppFooter";
 import { AppHeader } from "@/components/AppHeader";
@@ -34,8 +35,26 @@ export default async function CampaignRevisaoPage({
     notFound();
   }
 
-  const configuredAppUrl =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
+  const headerStore = await headers();
+  const forwardedHost =
+    headerStore.get("x-forwarded-host") ?? headerStore.get("host") ?? "";
+  const forwardedProto = headerStore.get("x-forwarded-proto") ?? "https";
+  const isLocalHost =
+    !forwardedHost ||
+    forwardedHost.includes("localhost") ||
+    forwardedHost.includes("127.0.0.1");
+
+  const envAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "";
+  const hasPublicEnvUrl =
+    Boolean(envAppUrl) &&
+    !envAppUrl.includes("localhost") &&
+    !envAppUrl.includes("127.0.0.1");
+
+  const configuredAppUrl = !isLocalHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : hasPublicEnvUrl
+      ? envAppUrl
+      : "https://comer-fora-up.vercel.app";
 
   return (
     <div className="flex min-h-screen flex-col">

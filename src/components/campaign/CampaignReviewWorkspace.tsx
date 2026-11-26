@@ -78,13 +78,16 @@ export function CampaignReviewWorkspace({
   );
 
   useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      (!configuredAppUrl || configuredAppUrl.includes("localhost"))
-    ) {
-      setResolvedOrigin(window.location.origin);
+    if (typeof window === "undefined") return;
+    const browserOrigin = window.location.origin;
+    const isLocalBrowser =
+      browserOrigin.includes("localhost") ||
+      browserOrigin.includes("127.0.0.1");
+
+    if (!isLocalBrowser) {
+      setResolvedOrigin(browserOrigin);
     }
-  }, [configuredAppUrl]);
+  }, []);
 
   const isSeedReadOnly = campaign.session_id === null;
   const isActive = campaign.status === "active";
@@ -677,11 +680,11 @@ export function CampaignReviewWorkspace({
                 <div className="mx-auto mt-5 flex w-fit flex-col items-center rounded-xl border border-neutral-200 bg-white p-4">
                   <QRCodeSVG
                     value={qrUrl}
-                    size={168}
+                    size={192}
                     level="M"
                     bgColor="#FFFFFF"
-                    fgColor="#1A1A1A"
-                    includeMargin={false}
+                    fgColor="#000000"
+                    marginSize={3}
                   />
                   <p className="mt-3 text-xs font-extrabold uppercase tracking-wide text-[#EA1D2C]">
                     {ctaText || "Escaneie e ative seu benefício"}

@@ -106,7 +106,7 @@ npm run build
    - `NEXT_PUBLIC_APP_URL` (inicialmente pode deixar a URL prevista `https://<seu-projeto>.vercel.app`)
    - `N8N_WEBHOOK_URL` (opcional)
 4. Clique em **Deploy**.
-5. **Pós-deploy obrigatório:** confirme a URL final gerada pela Vercel (ex.: `https://comer-fora-impulso.vercel.app`), atualize `NEXT_PUBLIC_APP_URL` caso o domínio tenha mudado e faça **Redeploy** para que os QR Codes do Display de Mesa apontem diretamente para o link público acessível pelo celular.
+5. **Pós-deploy obrigatório:** confirme a URL final gerada pela Vercel (ex.: `https://comer-fora-up.vercel.app`), atualize `NEXT_PUBLIC_APP_URL` caso o domínio tenha mudado e faça **Redeploy** para que os QR Codes do Display de Mesa apontem diretamente para o link público acessível pelo celular.
 6. **Checklist rápido pós-publicação:**
    - Abrir `/` e confirmar carregamento dos 3 restaurantes demonstrativos e da logo iFood.
    - Gerar um diagnóstico e um kit de ativação, aprovar a campanha e escanear o QR Code pelo celular.
