@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+:root {
+  --brand-primary: #ea1d2c;
+  --brand-primary-hover: #a02331;
+  --brand-primary-dark: #9c050b;
+  --surface-bg: #f7f7f7;
+  --surface-card: #ffffff;
+  --surface-border: #e5e5e5;
+  --surface-subtle: #fafafa;
+  --accent-warning: #ffb761;
+  --accent-warning-soft: #fff4e5;
+  --text-primary: #3f3e3e;
+  --text-strong: #1a1a1a;
+  --text-muted: #717171;
+}
+
+@theme inline {
+  --color-brand: var(--brand-primary);
+  --color-brand-hover: var(--brand-primary-hover);
+  --color-brand-dark: var(--brand-primary-dark);
+  --color-canvas: var(--surface-bg);
+  --color-card: var(--surface-card);
+  --color-line: var(--surface-border);
+  --color-amber-accent: var(--accent-warning);
+  --color-amber-soft: var(--accent-warning-soft);
+  --color-ink: var(--text-primary);
+  --color-ink-strong: var(--text-strong);
+  --color-ink-muted: var(--text-muted);
+  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  background-color: var(--surface-bg);
+  color: var(--text-primary);
+  font-family: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+}
