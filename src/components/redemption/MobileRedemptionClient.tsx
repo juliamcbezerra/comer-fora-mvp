@@ -49,6 +49,7 @@ export function MobileRedemptionClient({
   );
   const [recurrenceOptIn, setRecurrenceOptIn] = useState(true);
   const [isRedeeming, setIsRedeeming] = useState(false);
+  const [isSimulatingNextClient, setIsSimulatingNextClient] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [issuedCoupon, setIssuedCoupon] = useState<{
     code: string;
@@ -128,6 +129,32 @@ export function MobileRedemptionClient({
       );
     } finally {
       setIsRedeeming(false);
+    }
+  }
+
+  async function handleSimulateNextClient() {
+    if (isSimulatingNextClient) return;
+    setIsSimulatingNextClient(true);
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch(`/api/public/campaigns/${campaign.id}/view`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data?.recorded && typeof data.redemptions_count === "number") {
+          setRedemptionsCount(data.redemptions_count);
+        }
+      }
+    } catch {
+      // Silencioso para não travar a simulação; o backend também garante views >= redemptions
+    } finally {
+      setIssuedCoupon(null);
+      setCopiedCode(false);
+      setIsSimulatingNextClient(false);
     }
   }
 
@@ -280,13 +307,21 @@ export function MobileRedemptionClient({
                 {!isExhausted ? (
                   <button
                     type="button"
-                    onClick={() => setIssuedCoupon(null)}
+                    disabled={isSimulatingNextClient}
+                    onClick={() => void handleSimulateNextClient()}
                     className={cn(
-                      "w-full rounded-lg px-4 py-2.5 text-xs font-bold",
+                      "inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60",
                       SECONDARY_BUTTON_CLASS
                     )}
                   >
-                    Simular outro cliente na mesa
+                    {isSimulatingNextClient ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Registrando nova leitura do QR...
+                      </>
+                    ) : (
+                      "Simular outro cliente na mesa"
+                    )}
                   </button>
                 ) : null}
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MapPin, ShieldAlert } from "lucide-react";
 import { MobileRedemptionClient } from "@/components/redemption/MobileRedemptionClient";
-import { isValidUuid } from "@/lib/session";
+import { getSessionId, isValidUuid } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +24,11 @@ export default async function PublicRedemptionPage({
   }
 
   const supabase = getSupabaseAdmin();
+  const visitorSessionId = await getSessionId();
   const { data: campaign } = await supabase
     .from("campaigns")
     .select(
-      "id, restaurant_id, title, offer_description, target_window, coupon_limit, cta_text, recurrence_hook, status"
+      "id, restaurant_id, session_id, title, offer_description, target_window, coupon_limit, cta_text, recurrence_hook, status"
     )
     .eq("id", campaignId)
     .maybeSingle();
@@ -36,17 +37,29 @@ export default async function PublicRedemptionPage({
     notFound();
   }
 
+  let redemptionsQuery = supabase
+    .from("campaign_events")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campaign.id)
+    .eq("event_type", "redemption");
+
+  if (campaign.session_id === null) {
+    if (visitorSessionId) {
+      redemptionsQuery = redemptionsQuery.or(
+        `session_id.is.null,session_id.eq.${visitorSessionId}`
+      );
+    } else {
+      redemptionsQuery = redemptionsQuery.is("session_id", null);
+    }
+  }
+
   const [{ data: restaurant }, { count: redemptionsCount }] = await Promise.all([
     supabase
       .from("restaurants")
       .select("name, category, neighborhood, city")
       .eq("id", campaign.restaurant_id)
       .maybeSingle(),
-    supabase
-      .from("campaign_events")
-      .select("id", { count: "exact", head: true })
-      .eq("campaign_id", campaign.id)
-      .eq("event_type", "redemption"),
+    redemptionsQuery,
   ]);
 
   if (campaign.status !== "active") {

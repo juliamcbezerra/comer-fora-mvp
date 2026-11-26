@@ -190,7 +190,7 @@ export async function runDiagnosticAgent(params: {
   let aiStatus: "success" | "fallback" = "success";
   let fallbackReason: string | null = null;
   let latencyMs = 0;
-  let usedModel: string = GEMINI_MODEL;
+  let usedModel: string = `gemini:${GEMINI_MODEL}`;
   let aiOutput: DiagnosticAiOutput;
 
   try {
@@ -340,7 +340,7 @@ export async function runCreativeActivatorAgent(params: {
   let aiStatus: "success" | "fallback" = "success";
   let fallbackReason: string | null = null;
   let latencyMs = 0;
-  let usedModel: string = GEMINI_MODEL;
+  let usedModel: string = `gemini:${GEMINI_MODEL}`;
   let kit: CreativeKitOutput;
 
   try {

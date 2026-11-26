@@ -158,6 +158,11 @@ export function DiagnosticView({
     !lastRunMeta && Boolean(diagnostic?.prompt_version.startsWith("seed-demo"));
 
   const updatedTime = diagnostic ? formatTimeHHMM(diagnostic.created_at) : "";
+  const netEstimatedCapture = Math.max(
+    0,
+    metrics.potential_monthly_capture -
+      metrics.recommended_coupon_cap * metrics.max_safe_cost_per_redemption
+  );
   const readinessBarColor =
     metrics.readiness_score >= 75
       ? "bg-emerald-600"
@@ -299,13 +304,14 @@ export function DiagnosticView({
           <div className="rounded-lg border border-neutral-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#717171]">
               <Ticket className="h-3.5 w-3.5 text-neutral-400" />
-              Limite seguro de cupons
+              Cupons no benefício máximo
             </p>
             <p className="mt-1 text-xl font-extrabold text-[#1A1A1A]">
               {metrics.recommended_coupon_cap} / mês
             </p>
             <p className="mt-0.5 text-[11px] text-[#717171]">
-              Capacidade: até {metrics.operational_coupon_ceiling}/mês
+              Sobe se o benefício for menor (capacidade: até{" "}
+              {metrics.operational_coupon_ceiling}/mês)
             </p>
           </div>
 
@@ -327,13 +333,14 @@ export function DiagnosticView({
           <div className="rounded-lg border border-emerald-200/80 bg-emerald-50/40 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800">
               <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
-              Faturamento potencial
+              Receita bruta estimada (demo)
             </p>
             <p className="mt-1 text-xl font-extrabold text-emerald-700">
               {formatBRL(metrics.potential_monthly_capture)}
             </p>
             <p className="mt-0.5 text-[11px] text-emerald-800/80">
-              Orç. mensal: {formatBRL(restaurant.monthly_promo_budget)}
+              Líquida após incentivos: {formatBRL(netEstimatedCapture)} •
+              projeção demonstrativa (não incremental)
             </p>
           </div>
         </div>

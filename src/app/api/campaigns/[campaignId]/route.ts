@@ -143,6 +143,14 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
+    // Validação explícita de ownership (anti-IDOR)
+    if (existing.session_id !== sessionId) {
+      return NextResponse.json(
+        { error: "Sem permissão para alterar uma campanha de outra sessão." },
+        { status: 403 }
+      );
+    }
+
     const { approve_and_activate, human_approved, ...editableFields } =
       parsed.data;
 

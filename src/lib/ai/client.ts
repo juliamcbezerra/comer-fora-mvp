@@ -2,54 +2,20 @@ import { GoogleGenAI, Type, type Schema } from "@google/genai";
 
 export const GEMINI_MODEL = "gemini-flash-lite-latest";
 
-interface OpenAiCompatibleProviderConfig {
-  id: string;
-  envVar: string;
-  endpoint: string;
-  models: readonly string[];
-  extraHeaders?: Record<string, string>;
-}
-
-const OPENAI_COMPATIBLE_PROVIDERS: ReadonlyArray<OpenAiCompatibleProviderConfig> =
-  [
-    {
-      id: "openrouter",
-      envVar: "OPENROUTER_API_KEY",
-      endpoint: "https://openrouter.ai/api/v1/chat/completions",
-      models: ["openrouter/free", "baidu/ernie-5.5-flash-preview:free"],
-      extraHeaders: {
-        "HTTP-Referer": "https://comer-fora-impulso.vercel.app",
-        "X-Title": "iFood Comer Fora Impulso (Prototipo)",
-      },
-    },
-    {
-      id: "mistral",
-      envVar: "MISTRAL_API_KEY",
-      endpoint: "https://api.mistral.ai/v1/chat/completions",
-      models: ["mistral-small-latest"],
-    },
-    {
-      id: "cerebras",
-      envVar: "CEREBRAS_API_KEY",
-      endpoint: "https://api.cerebras.ai/v1/chat/completions",
-      models: ["llama-3.3-70b"],
-    },
-    {
-      id: "groq",
-      envVar: "GROQ_API_KEY",
-      endpoint: "https://api.groq.com/openai/v1/chat/completions",
-      models: ["llama-3.3-70b-versatile"],
-    },
-  ];
-
-const GEMINI_RACE_MODELS = [
+/**
+ * Cadeia governada exclusivamente por modelos oficiais da Google Gemini API:
+ * - Primário Flash ativo + 1 modelo Flash oficial secundário para contingência de 503/rate limit.
+ * - Sem fallback para provedores gratuitos de terceiros (OpenRouter/Baidu etc.) por governança de dados.
+ */
+export const GEMINI_OFFICIAL_MODELS = [
   "gemini-flash-lite-latest",
   "gemini-3.5-flash-lite",
 ] as const;
 
-// 25s permite que modelos gratuitos de 11-13s (ex.: OpenRouter ernie-5.5-flash)
-// concluam com sucesso sem serem abortados prematuramente, mantendo margem segura na Vercel.
-export const AI_TIMEOUT_MS = 25_000;
+// Orçamento total controlado de 15s: evita travar a demonstração;
+// se ambos os modelos oficiais da Gemini falharem ou atingirem timeout,
+// o orquestrador cai diretamente para o fallback determinístico local validado pelo Zod.
+export const AI_TIMEOUT_MS = 15_000;
 
 export const diagnosticResponseSchema: Schema = {
   type: Type.OBJECT,
@@ -63,7 +29,7 @@ export const diagnosticResponseSchema: Schema = {
     executive_summary: {
       type: Type.STRING,
       description:
-        "Leitura executiva concreta e personalizada (2 a 3 frases, até 480 caracteres) citando dados reais do restaurante.",
+        "Leitura estratégica de consultor comercial sênior (2 a 3 frases densas, até 520 caracteres), sem parafrasear o cadastro, cruzando culinária, bairro/turno e alavanca gastronômica de baixo CMV.",
     },
     bottlenecks: {
       type: Type.ARRAY,
@@ -189,87 +155,6 @@ function extractJsonObject(rawText: string, modelLabel: string): unknown {
   }
 }
 
-async function callOpenAiSingleModel(
-  provider: OpenAiCompatibleProviderConfig,
-  apiKey: string,
-  model: string,
-  params: GenerateStructuredJsonParams,
-  timeoutMs: number
-): Promise<{ parsed: unknown; model: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    let response = await fetch(provider.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        ...(provider.extraHeaders ?? {}),
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: params.temperature,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: params.systemInstruction },
-          { role: "user", content: params.userPrompt },
-        ],
-      }),
-    });
-
-    if (response.status === 400) {
-      response = await fetch(provider.endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-          ...(provider.extraHeaders ?? {}),
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model,
-          temperature: params.temperature,
-          messages: [
-            { role: "system", content: params.systemInstruction },
-            { role: "user", content: params.userPrompt },
-          ],
-        }),
-      });
-    }
-
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => "");
-      throw new Error(
-        `${provider.id} HTTP ${response.status} (${model}): ${errBody.slice(0, 140)}`
-      );
-    }
-
-    const payload = (await response.json()) as {
-      model?: string;
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const rawText = payload.choices?.[0]?.message?.content?.trim();
-
-    if (!rawText) {
-      throw new Error(`${provider.id} (${model}) retornou resposta vazia.`);
-    }
-
-    const resolvedModel = payload.model?.trim() || model;
-    const modelTag = `${provider.id}:${resolvedModel}`;
-    const parsed = extractJsonObject(rawText, modelTag);
-
-    if (params.validateParsed && !params.validateParsed(parsed)) {
-      throw new Error(`${modelTag} retornou JSON fora do contrato esperado.`);
-    }
-
-    return { parsed, model: modelTag };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function callSingleGeminiCandidate(
   ai: GoogleGenAI,
   model: string,
@@ -324,10 +209,11 @@ async function callSingleGeminiCandidate(
 }
 
 /**
- * Gateway Multi-Provider em Corrida Paralela Única (*Hedged* via Promise.any):
- * Dispara simultaneamente todos os modelos saudáveis configurados (OpenRouter Free +
- * Gemini Flash) sem corte artificial intermediário. Quem responder primeiro com JSON
- * 100% válido no contrato Zod vence imediatamente.
+ * Gateway governado exclusivamente pela Google Gemini API (`@google/genai`):
+ * Executa em paralelo (*hedged* via Promise.any) os 2 modelos oficiais Gemini Flash
+ * dentro do orçamento controlado de 15s. Quem responder primeiro com JSON 100% válido
+ * no contrato Zod vence imediatamente; caso ambos falhem ou excedam o tempo, o
+ * orquestrador cai diretamente no fallback determinístico local.
  */
 export async function generateStructuredJson(
   params: GenerateStructuredJsonParams
@@ -335,39 +221,18 @@ export async function generateStructuredJson(
   const totalBudgetMs = params.timeoutMs ?? AI_TIMEOUT_MS;
   const startedAt = Date.now();
 
-  const configuredOpenAiProviders = OPENAI_COMPATIBLE_PROVIDERS.map(
-    (provider) => ({
-      provider,
-      apiKey: process.env[provider.envVar]?.trim() ?? "",
-    })
-  ).filter((entry) => entry.apiKey.length > 0);
-
   const geminiKey = process.env.GEMINI_API_KEY?.trim() ?? "";
 
-  if (configuredOpenAiProviders.length === 0 && !geminiKey) {
+  if (!geminiKey) {
     throw new Error(
-      "Nenhuma chave de IA configurada no servidor (defina OPENROUTER_API_KEY, MISTRAL_API_KEY, CEREBRAS_API_KEY, GROQ_API_KEY ou GEMINI_API_KEY)."
+      "Chave GEMINI_API_KEY não configurada no servidor. Acionando fallback determinístico local."
     );
   }
 
-  const racePromises: Array<Promise<{ parsed: unknown; model: string }>> = [];
-
-  for (const { provider, apiKey } of configuredOpenAiProviders) {
-    for (const model of provider.models) {
-      racePromises.push(
-        callOpenAiSingleModel(provider, apiKey, model, params, totalBudgetMs)
-      );
-    }
-  }
-
-  if (geminiKey) {
-    const geminiClient = new GoogleGenAI({ apiKey: geminiKey });
-    for (const model of GEMINI_RACE_MODELS) {
-      racePromises.push(
-        callSingleGeminiCandidate(geminiClient, model, params, totalBudgetMs)
-      );
-    }
-  }
+  const geminiClient = new GoogleGenAI({ apiKey: geminiKey });
+  const racePromises = GEMINI_OFFICIAL_MODELS.map((model) =>
+    callSingleGeminiCandidate(geminiClient, model, params, totalBudgetMs)
+  );
 
   try {
     const winner = await Promise.any(racePromises);
@@ -383,6 +248,6 @@ export async function generateStructuredJson(
       .map((e) => (e instanceof Error ? e.message : String(e)))
       .join(" | ");
 
-    throw new Error(summary || "Provedores de IA indisponíveis no momento.");
+    throw new Error(summary || "Gemini API indisponível no momento.");
   }
 }

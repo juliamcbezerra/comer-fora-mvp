@@ -105,6 +105,14 @@ export async function PATCH(request: Request, context: RouteContext) {
       return shouldSetCookie ? attachSessionCookie(response, sessionId) : response;
     }
 
+    // Validação explícita de ownership (anti-IDOR) para restaurantes não-seed
+    if (existing.session_id !== sessionId) {
+      return NextResponse.json(
+        { error: "Sem permissão para alterar um restaurante de outra sessão." },
+        { status: 403 }
+      );
+    }
+
     const { data: updated, error } = await supabase
       .from("restaurants")
       .update({

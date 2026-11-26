@@ -44,10 +44,12 @@ Registro contínuo das decisões arquiteturais, técnicas, de produto, de IA e d
 | DEC-011 | 2026-11-25 | Remoção de `vertexai: true` e cadeia de fallback entre modelos Gemini Flash ativos | APIs / Prompts / Riscos | Confirmada |
 | DEC-012 | 2026-11-25 | Requisições paralelas *hedged* (`Promise.any`) na Gemini API e inputs decimais livres (`step="any"`) | APIs / Riscos / UX | Confirmada |
 | DEC-013 | 2026-11-25 | Proteção de campanha seed, validação HITL no servidor e Tent Card imprimível com QR Code real | APIs / Riscos / UX | Confirmada |
-| DEC-014 | 2026-11-25 | Gateway Multi-Provider de IA (Groq gratuito `llama-3.3-70b-versatile` + failover Gemini + fallback determinístico) | APIs / Prompts / Riscos | Confirmada |
+| DEC-014 | 2026-11-25 | Gateway Multi-Provider de IA (Groq gratuito `llama-3.3-70b-versatile` + failover Gemini + fallback determinístico) | APIs / Prompts / Riscos | Substituída por DEC-018 |
 | DEC-015 | 2026-11-25 | Bloqueio server-side de teto de cupons (`409`), opt-in anônimo sem PII e fórmula da NSM no Ecossistema | APIs / Riscos / Arquitetura | Confirmada |
 | DEC-016 | 2026-11-25 | Refino visual SaaS iFood, logo oficial e separação de copy comercial vs. auditoria técnica | UX / Marca | Confirmada |
 | DEC-017 | 2026-11-25 | Páginas amigáveis de erro (`not-found`/`error`), ajuste responsivo `375px` e `maxDuration = 30` para Vercel | UX / APIs / Riscos | Confirmada |
+| DEC-018 | 2026-11-26 | Governança de IA exclusivamente via Gemini API oficial + fallback determinístico local (remoção de OpenRouter/Baidu) | APIs / Prompts / Riscos | Confirmada |
+| DEC-019 | 2026-11-26 | Integridade analítica do funil (`views >= redemptions >= opt-in`), isolamento de eventos em campanhas seed, rate limiting e transparência de KPIs/NSM | APIs / Riscos / UX | Confirmada |
 
 ---
 
@@ -329,6 +331,41 @@ Registro contínuo das decisões arquiteturais, técnicas, de produto, de IA e d
   - Manter o 404 padrão do Next.js e o timeout default da Vercel (descartadas por prejudicarem resiliência e causarem risco de HTTP 504 em chamadas válidas de 11s–13s do OpenRouter em produção).
 - **Justificativa técnica e de negócio:** Elimina telas quebradas ou em inglês para avaliadores, garante ergonomia em smartphones (`375px`) e protege a taxa de sucesso da IA no ambiente serverless da Vercel.
 - **Impactos e limitações:** O `maxDuration = 30` é suportado nos planos atuais da Vercel (Hobby com Fluid Compute e Pro); se executado em ambiente restrito a 10s, o fallback determinístico continua garantindo resposta íntegra.
+
+---
+
+## DEC-018 — Governança de IA exclusivamente via Gemini API oficial + fallback determinístico local (remoção de OpenRouter/Baidu)
+
+- **Data:** 2026-11-26
+- **Status:** Confirmada (substitui `DEC-014`)
+- **Dimensão (Slide):** APIs / Prompts / Riscos
+- **Contexto e problema:** Na auditoria pré-entrega, a tabela `ai_runs` registrou queda para `openrouter:baidu/ernie-5.5-flash-preview:free`. Para um case corporativo do iFood, enviar dados operacionais de restaurantes parceiros a modelos gratuitos preview de terceiros (OpenRouter/Baidu) gera risco de governança, retenção de dados e instabilidade de qualidade, além de estender o orçamento de espera para `25s`.
+- **Decisão tomada:**
+  1. Remover completamente OpenRouter, Mistral, Cerebras e Groq de `src/lib/ai/client.ts`, `.env.example` e `README.md`.
+  2. Manter a execução ativa governada **exclusivamente por modelos oficiais da Google Gemini API** (`@google/genai`, `GEMINI_API_KEY`): corrida paralela controlada entre `gemini-flash-lite-latest` e `gemini-3.5-flash-lite` com orçamento máximo de `15s` (`AI_TIMEOUT_MS = 15_000`).
+  3. Caso ambos os modelos oficiais da Gemini falhem ou atinjam timeout, degradar diretamente para o **fallback determinístico local** (`src/lib/ai/fallbacks.ts`), validado pelo Zod e registrado com transparência em `ai_runs` (`status = 'fallback'`).
+- **Alternativas consideradas:** Manter OpenRouter Free como contingência de 3º nível (descartada pelo risco de governança de dados e inconsistência de qualidade em avaliação executiva).
+- **Justificativa técnica e de negócio:** Elimina exposição de dados a provedores terceiros não homologados, reduz o pior caso de latência de `25s` para `15s` e reforça a postura de segurança/governança para o iFood.
+- **Impactos e limitações:** Requer `GEMINI_API_KEY` válida no ambiente; em indisponibilidade simultânea dos dois modelos Flash oficiais da Gemini, o fallback determinístico assume de forma transparente.
+
+---
+
+## DEC-019 — Integridade analítica do funil, isolamento de eventos em campanhas seed, rate limiting e transparência de KPIs/NSM
+
+- **Data:** 2026-11-26
+- **Status:** Confirmada
+- **Dimensão (Slide):** APIs / Riscos / UX
+- **Contexto e problema:** A auditoria técnica e de negócio identificou cinco pontos críticos para endurecimento pré-entrega: (1) `views = 1` e `redemptions = 2` (conversão de `200%`) ao simular um segundo cliente sem novo `/view` ou em chamadas diretas à API; (2) eventos em campanhas seed (`session_id IS NULL`, ex.: *Taco & Brasa*) podiam ser compartilhados/esgotados entre visitantes; (3) contradição aparente entre `"Limite seguro de cupons: 27 / mês"` no topo e `"35 cupons"` em planos com benefício unitário menor, além de exibir receita bruta sem descontar incentivos nem explicitar caráter demonstrativo; (4) ausência de rate limiting nas rotas públicas de IA e resgate; (5) mistura silenciosa de eventos `demo_seed` na North Star Metric sem filtro de escopo.
+- **Decisão tomada:**
+  1. **Integridade do funil (`src/lib/funnel-metrics.ts`, `MobileRedemptionClient.tsx`, `redeem/route.ts`, `results.ts`):** ao clicar em *"Simular outro cliente na mesa"*, disparar nova chamada real `POST /api/public/campaigns/[campaignId]/view`; no `POST /redeem`, registrar `view` automático se `views <= redemptions`; e aplicar `computeSafeFunnelMetrics` garantindo `Visualizações >= Resgates >= Opt-in` e taxas sempre em `[0%, 100%]`.
+  2. **Proteção de seeds e anti-IDOR (`redeem/route.ts`, `view/route.ts`, `r/[campaignId]/page.tsx`, `restaurants/[id]/route.ts`, `campaigns/[campaignId]/route.ts`):** isolar eventos de visitantes em campanhas seed na `cfi_session_id` do visitante (sem alterar ou esgotar o baseline global `session_id IS NULL`), reforçar checagens explícitas de ownership (`HTTP 403`) em `PATCH` de restaurantes e campanhas não-seed e exibir o aviso de copy-on-write na UI (*"Criamos uma cópia na sua sessão para preservar o exemplo original."*).
+  3. **Clareza financeira nos KPIs (`DiagnosticView.tsx`, `OnboardingWorkspace.tsx`):** renomear para *"Cupons no benefício máximo"* (explicando que sobe com benefício menor até o teto operacional) e *"Receita bruta estimada (demo)"* com subtexto exibindo *"Líquida após incentivos: R$ X • projeção demonstrativa (não incremental)"*.
+  4. **Rate limiting server-side (`src/lib/rate-limit.ts`):** sliding window em memória aplicado em `/api/ai/diagnose` (`10 req/10 min` por sessão/IP), `/api/ai/generate-kit` (`10 req/10 min` por sessão/IP) e `/api/public/campaigns/[campaignId]/redeem` (`30 req/10 min` por IP), retornando `HTTP 429` com `Retry-After` e mensagem amigável em PT-BR.
+  5. **Transparência da NSM (`results.ts`, `ResultsDashboardClient.tsx`):** expor `ecosystem_session_only` (excluindo `demo_seed` e seeds intocados) ao lado de `ecosystem` (base completa com exemplos), com seletor direto na aba *Visão Ecossistema & Auditoria IA*.
+- **Alternativas consideradas:** Rate limiting distribuído com Redis externo (descartado para manter zero infraestrutura adicional no MVP; documentado como evolução de produção).
+- **Justificativa técnica e de negócio:** Elimina distorções analíticas (conversão > 100%, NSM inflada por seed), protege a experiência concorrente de avaliadores no link público e aumenta a credibilidade executiva dos números exibidos ao dono do restaurante.
+- **Impactos e limitações:** O rate limiter em memória atua por instância serverless (adequado para proteção leve do protótipo; em escala de produção evoluiria para Upstash/Redis).
+
 
 
 

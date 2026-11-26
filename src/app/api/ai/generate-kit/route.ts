@@ -3,6 +3,11 @@ import {
   ConstraintViolationError,
   runCreativeActivatorAgent,
 } from "@/lib/ai/orchestrator";
+import {
+  checkRateLimit,
+  formatRetryAfterPtBr,
+  getClientIp,
+} from "@/lib/rate-limit";
 import { getDiagnosticById } from "@/lib/repositories/diagnostics";
 import { getAccessibleRestaurantById } from "@/lib/repositories/restaurants";
 import { campaignPlanInputSchema } from "@/lib/schemas";
@@ -10,6 +15,11 @@ import { attachSessionCookie, getOrCreateSessionId } from "@/lib/session";
 import { SupabaseConfigError } from "@/lib/supabase/server";
 
 export const maxDuration = 30;
+
+const GENERATE_KIT_RATE_LIMIT = {
+  limit: 10,
+  windowMs: 10 * 60 * 1000, // 10 minutos
+};
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +37,27 @@ export async function POST(request: Request) {
     }
 
     const { sessionId, shouldSetCookie } = await getOrCreateSessionId();
+    const rateKey = `generate-kit:${sessionId || getClientIp(request)}`;
+    const rateCheck = checkRateLimit(rateKey, GENERATE_KIT_RATE_LIMIT);
+    if (!rateCheck.allowed) {
+      const rateLimitResponse = NextResponse.json(
+        {
+          error: `Você atingiu o limite temporário de geração de kits (10 a cada 10 minutos). Aguarde ${formatRetryAfterPtBr(
+            rateCheck.retryAfterSeconds
+          )} para tentar novamente.`,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateCheck.retryAfterSeconds),
+          },
+        }
+      );
+      return shouldSetCookie
+        ? attachSessionCookie(rateLimitResponse, sessionId)
+        : rateLimitResponse;
+    }
+
     const restaurant = await getAccessibleRestaurantById(
       parsed.data.restaurant_id,
       sessionId

@@ -27,7 +27,7 @@ O **Comer Fora Impulso** combina **regras financeiras determinísticas**, **2 ag
 - **Framework:** Next.js 15 (App Router) + React 19 + TypeScript
 - **Estilização:** Tailwind CSS v4 + Lucide Icons + Google Fonts (`Plus Jakarta Sans`)
 - **Validação de Contratos:** Zod
-- **IA Generativa:** Gateway Multi-Provider server-side em corrida paralela (`Promise.any`, timeout `25s`, `maxDuration = 30s` na Vercel) suportando **OpenRouter Free** (`OPENROUTER_API_KEY`), **Google Gemini API** (`@google/genai`, `GEMINI_API_KEY`), Mistral, Cerebras ou Groq + **fallback determinístico transparente** registrado em `ai_runs`
+- **IA Generativa:** Gateway server-side governado exclusivamente por modelos oficiais da **Google Gemini API** (`@google/genai`, `GEMINI_API_KEY` — `gemini-flash-lite-latest` + `gemini-3.5-flash-lite` em corrida controlada de `15s`, `maxDuration = 30s` na Vercel) + **fallback determinístico local transparente** validado por Zod e registrado em `ai_runs`
 - **Banco de Dados:** Supabase (PostgreSQL) via `@supabase/supabase-js`
 - **QR Code e Gráficos:** `qrcode.react` (SVG client-side) e `recharts`
 - **Testes Automatizados:** Vitest (`src/lib/business-rules.test.ts` e `src/lib/ai/fallbacks.test.ts`)
@@ -52,7 +52,7 @@ O **Comer Fora Impulso** combina **regras financeiras determinísticas**, **2 ag
 ### Pré-requisitos
 - Node.js 20+ e npm
 - Conta gratuita no [Supabase](https://supabase.com/)
-- Ao menos 1 chave gratuita de IA: [Google AI Studio (Gemini)](https://aistudio.google.com/apikey) e/ou [OpenRouter](https://openrouter.ai/keys)
+- Chave da [Google AI Studio (Gemini API)](https://aistudio.google.com/apikey)
 
 ### Passo 1 — Instalar dependências
 ```bash
@@ -76,12 +76,11 @@ cp .env.example .env.local
 |---|---|---|
 | `SUPABASE_URL` | Sim | Project URL do Supabase (`https://<projeto>.supabase.co`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Sim | Chave `service_role` (server-side only; nunca exposta ao cliente) |
-| `GEMINI_API_KEY` | Recomendada* | Chave da Google Gemini API |
-| `OPENROUTER_API_KEY` | Recomendada* | Chave gratuita do OpenRouter (roda em paralelo com Gemini para alta disponibilidade) |
+| `GEMINI_API_KEY` | Recomendada* | Chave oficial da Google Gemini API (modelos Flash) |
 | `NEXT_PUBLIC_APP_URL` | Sim | URL pública da aplicação usada na geração dos links do QR Code (`http://localhost:3000` em dev) |
 | `N8N_WEBHOOK_URL` | Não | Webhook opcional disparado de forma não bloqueante (timeout 4s) na ativação da campanha |
 
-> \* Configure ao menos um provedor de IA (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `CEREBRAS_API_KEY` ou `GROQ_API_KEY`). Caso todos os provedores estejam indisponíveis, o fallback determinístico assume de forma transparente.
+> \* Caso `GEMINI_API_KEY` não esteja configurada ou os modelos oficiais da Gemini API estejam temporariamente indisponíveis, o fallback determinístico local assume de forma transparente e registra `status = 'fallback'` em `ai_runs`.
 
 ### Passo 4 — Rodar em desenvolvimento e validar
 ```bash
@@ -103,7 +102,7 @@ npm run build
 3. Em **Environment Variables**, cadastre todas as variáveis obrigatórias da tabela acima para o ambiente *Production* (e *Preview*, se desejar):
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `GEMINI_API_KEY` e/ou `OPENROUTER_API_KEY`
+   - `GEMINI_API_KEY`
    - `NEXT_PUBLIC_APP_URL` (inicialmente pode deixar a URL prevista `https://<seu-projeto>.vercel.app`)
    - `N8N_WEBHOOK_URL` (opcional)
 4. Clique em **Deploy**.

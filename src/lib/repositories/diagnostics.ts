@@ -1,3 +1,4 @@
+import { computeSafeFunnelMetrics } from "@/lib/funnel-metrics";
 import { canAccessScopedRecord, isValidUuid } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -114,10 +115,18 @@ export async function getRestaurantPerformanceSummary(
     ])
   );
 
-  const { data: events } = await supabase
+  let eventsQuery = supabase
     .from("campaign_events")
     .select("campaign_id, event_type")
     .in("campaign_id", campaignIds);
+
+  if (sessionId) {
+    eventsQuery = eventsQuery.or(`session_id.is.null,session_id.eq.${sessionId}`);
+  } else {
+    eventsQuery = eventsQuery.is("session_id", null);
+  }
+
+  const { data: events } = await eventsQuery;
 
   let views = 0;
   let redemptions = 0;
@@ -134,15 +143,16 @@ export async function getRestaurantPerformanceSummary(
     if (type === "recurrence_opt_in") optIns += 1;
   }
 
+  const safeFunnel = computeSafeFunnelMetrics({ views, redemptions, optIns });
+
   return {
     total_campaigns: campaignList.length,
     active_campaigns: campaignList.filter((c) => c.status === "active").length,
-    total_views: views,
-    total_redemptions: redemptions,
-    total_opt_ins: optIns,
-    conversion_rate_pct: views > 0 ? roundCurrency((redemptions / views) * 100) : 0,
-    recurrence_opt_in_rate_pct:
-      redemptions > 0 ? roundCurrency((optIns / redemptions) * 100) : 0,
+    total_views: safeFunnel.views,
+    total_redemptions: safeFunnel.redemptions,
+    total_opt_ins: safeFunnel.optIns,
+    conversion_rate_pct: safeFunnel.conversionRatePct,
+    recurrence_opt_in_rate_pct: safeFunnel.recurrenceOptInRatePct,
     budget_used: roundCurrency(budgetUsed),
   };
 }

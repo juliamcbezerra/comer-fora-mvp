@@ -52,6 +52,9 @@ export function ResultsDashboardClient({
   const [activeTab, setActiveTab] = useState<"restaurant" | "ecosystem">(
     initialTab
   );
+  const [ecosystemScope, setEcosystemScope] = useState<"session" | "full">(
+    "session"
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunningNextLoop, setIsRunningNextLoop] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -75,6 +78,7 @@ export function ResultsDashboardClient({
         funnel: payload.funnel,
         campaigns: payload.campaigns,
         ecosystem: payload.ecosystem,
+        ecosystem_session_only: payload.ecosystem_session_only,
         ai_runs: payload.ai_runs,
       });
     } catch {
@@ -119,6 +123,11 @@ export function ResultsDashboardClient({
     data.kpis.budget_ceiling > 0
       ? Math.min(100, (data.kpis.budget_used / data.kpis.budget_ceiling) * 100)
       : 0;
+
+  const activeEcosystem =
+    ecosystemScope === "session"
+      ? data.ecosystem_session_only
+      : data.ecosystem;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -533,69 +542,148 @@ export function ResultsDashboardClient({
         /* Aba Secundária (Gestores iFood): Visão Ecossistema & Auditoria IA (NSM + ai_runs) */
         <div className="mt-6 space-y-6">
           <section className="rounded-xl border border-neutral-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:p-8">
-            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
               <div className="max-w-2xl">
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#EA1D2C]">
-                  <Globe className="h-3.5 w-3.5" />
-                  North Star Metric (NSM) • Ecossistema iFood Comer Fora
-                </span>
-                <h2 className="mt-2 text-2xl font-extrabold text-[#1A1A1A]">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#EA1D2C]">
+                    <Globe className="h-3.5 w-3.5" />
+                    North Star Metric (NSM) • Ecossistema iFood Comer Fora
+                  </span>
+                </div>
+
+                {/* Seletor transparente de escopo: Sessão Atual vs. Base com Seeds */}
+                <div className="mt-3 inline-flex rounded-lg border border-neutral-200 bg-neutral-100/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setEcosystemScope("session")}
+                    className={cn(
+                      "cursor-pointer rounded-md px-3 py-1.5 text-xs font-bold transition-colors",
+                      ecosystemScope === "session"
+                        ? "bg-white text-[#EA1D2C] shadow-xs"
+                        : "text-[#3F3E3E] hover:text-black"
+                    )}
+                  >
+                    Apenas minha sessão
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEcosystemScope("full")}
+                    className={cn(
+                      "cursor-pointer rounded-md px-3 py-1.5 text-xs font-bold transition-colors",
+                      ecosystemScope === "full"
+                        ? "bg-white text-[#EA1D2C] shadow-xs"
+                        : "text-[#3F3E3E] hover:text-black"
+                    )}
+                  >
+                    Base completa com exemplos
+                  </button>
+                </div>
+
+                <h2 className="mt-3 text-2xl font-extrabold text-[#1A1A1A]">
                   Taxa de Ativação Qualificada:{" "}
                   <span className="text-[#EA1D2C]">
-                    {formatPct(data.ecosystem.nsm_qualified_activation_rate_pct)}
+                    {formatPct(activeEcosystem.nsm_qualified_activation_rate_pct)}
                   </span>
                 </h2>
                 <p className="mt-2 text-xs leading-relaxed text-[#3F3E3E] sm:text-sm">
-                  Percentual de restaurantes no ambiente atual que concluíram a
-                  jornada com{" "}
+                  {ecosystemScope === "session" ? (
+                    <>
+                      Exibindo{" "}
+                      <strong>exclusivamente eventos e campanhas da sua sessão atual</strong>{" "}
+                      (eventos pré-carregados <code>demo_seed</code> excluídos).
+                    </>
+                  ) : (
+                    <>
+                      Exibindo a{" "}
+                      <strong>base demonstrativa completa</strong> (inclui os 3
+                      exemplos pré-carregados + registros da sua sessão atual).
+                    </>
+                  )}{" "}
+                  Considera restaurantes com{" "}
                   <strong>
                     campanha aprovada via Human-in-the-Loop (HITL), guardrails
                     determinísticos ativos e pelo menos 1 resgate presencial
                     registrado no banco
                   </strong>
-                  . Ataca diretamente a dor do case (apenas 20% dos restaurantes
-                  divulgam o Comer Fora no salão).
+                  .
                 </p>
               </div>
 
-              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-5 text-center lg:min-w-60">
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-5 text-center lg:min-w-64">
                 <p className="text-xs font-semibold text-[#717171]">
-                  Restaurantes qualificados
+                  {ecosystemScope === "session"
+                    ? "Qualificados na sua sessão"
+                    : "Qualificados na base completa"}
                 </p>
                 <p className="mt-1 text-3xl font-extrabold text-[#1A1A1A]">
-                  {data.ecosystem.qualified_activated_restaurants}
+                  {activeEcosystem.qualified_activated_restaurants}
                   <span className="text-base font-semibold text-[#717171]">
                     {" "}
-                    / {data.ecosystem.total_restaurants}
+                    / {activeEcosystem.total_restaurants}
                   </span>
                 </p>
                 <p className="mt-1 text-[11px] text-[#717171]">
-                  {data.ecosystem.restaurants_with_diagnostic} já possuem
+                  {activeEcosystem.restaurants_with_diagnostic} já possuem
                   diagnóstico salvo
                 </p>
+                <div className="mt-3 border-t border-neutral-200 pt-2.5 text-[11px] text-[#717171]">
+                  {ecosystemScope === "session" ? (
+                    <span>
+                      Base completa com exemplos:{" "}
+                      <strong className="text-[#3F3E3E]">
+                        {data.ecosystem.qualified_activated_restaurants}/
+                        {data.ecosystem.total_restaurants} (
+                        {formatPct(
+                          data.ecosystem.nsm_qualified_activation_rate_pct
+                        )}
+                        )
+                      </strong>
+                    </span>
+                  ) : (
+                    <span>
+                      Apenas sua sessão:{" "}
+                      <strong className="text-[#3F3E3E]">
+                        {
+                          data.ecosystem_session_only
+                            .qualified_activated_restaurants
+                        }
+                        /{data.ecosystem_session_only.total_restaurants} (
+                        {formatPct(
+                          data.ecosystem_session_only
+                            .nsm_qualified_activation_rate_pct
+                        )}
+                        )
+                      </strong>
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <KpiCard
                 label="Campanhas Ativas Aprovadas"
-                value={String(data.ecosystem.total_active_campaigns)}
+                value={String(activeEcosystem.total_active_campaigns)}
                 sub="Com HITL confirmado"
               />
               <KpiCard
-                label="Resgates no Ecossistema"
-                value={String(data.ecosystem.total_redemptions)}
-                sub={`De ${data.ecosystem.total_views} visualizações`}
+                label="Resgates no Escopo"
+                value={String(activeEcosystem.total_redemptions)}
+                sub={`De ${activeEcosystem.total_views} visualizações`}
               />
               <KpiCard
                 label="Conversão Média QR → Resgate"
-                value={formatPct(data.ecosystem.ecosystem_conversion_rate_pct)}
-                sub="Agregado do banco"
+                value={formatPct(activeEcosystem.ecosystem_conversion_rate_pct)}
+                sub={
+                  ecosystemScope === "session"
+                    ? "Apenas eventos da sessão"
+                    : "Base completa com exemplos"
+                }
               />
               <KpiCard
                 label="Taxa Média Opt-in Retorno"
-                value={formatPct(data.ecosystem.ecosystem_opt_in_rate_pct)}
-                sub={`${data.ecosystem.total_opt_ins} opt-ins anônimos`}
+                value={formatPct(activeEcosystem.ecosystem_opt_in_rate_pct)}
+                sub={`${activeEcosystem.total_opt_ins} opt-ins anônimos`}
               />
             </div>
           </section>

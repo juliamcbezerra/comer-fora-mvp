@@ -24,6 +24,7 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 | TST-006 | Experiência mobile (`/r/[campaignId]`): registro de `view`, `redemption`, opt-in e bloqueio de teto de cupons | Jornada / Persistência | `aprovado` |
 | TST-007 | Dashboard de resultados, funil real, visão NSM e loop de recorrência | Persistência / IA | `aprovado` |
 | TST-008 | Segurança (zero chaves expostas no frontend), auditoria QA E2E completa e build final de produção (`npm run build`) | Segurança / APIs | `aprovado` |
+| TST-009 | Passe P0+P1 pré-entrega: integridade do funil (`<= 100%`), governança Gemini oficial, isolamento de seeds, rate limiting (`429`), NSM por escopo e prompt `v1.3` | IA / APIs / Riscos / UX | `aprovado` |
 
 ---
 
@@ -226,6 +227,28 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 - **Correção implementada:** Criação de `src/app/not-found.tsx` e `src/app/error.tsx`, ajuste responsivo em `ResultsDashboardClient.tsx` e `AppHeader.tsx`, e `export const maxDuration = 30` em `/api/ai/diagnose` e `/api/ai/generate-kit`.
 - **Evidência ou forma de reprodução:** Executar `npx tsc --noEmit`, `npm test`, `npm run build`, subir `npx next start` e validar as rotas de API e `/restaurante/id-invalido/diagnostico`.
 
+### TST-009 — Passe P0+P1 Pré-Entrega: Integridade do Funil, Governança Gemini Oficial, Rate Limit, NSM Transparente e Prompt `v1.3`
+
+- **Data:** 2026-11-26
+- **Tipo:** Resultado Comprovado
+- **Funcionalidade testada:** `src/lib/funnel-metrics.ts`, `src/lib/rate-limit.ts`, `src/lib/ai/client.ts` (Gemini oficial only), `src/lib/ai/prompts.ts` (`v1.3`), `src/lib/repositories/results.ts` (`ecosystem_session_only` vs. `ecosystem`), `src/app/api/public/campaigns/[campaignId]/redeem/route.ts`, `view/route.ts`, `MobileRedemptionClient.tsx`, `DiagnosticView.tsx`, `OnboardingWorkspace.tsx` e `ResultsDashboardClient.tsx`.
+- **Cenário de teste:**
+  1. Checagem de tipos (`npx tsc --noEmit`), suíte unitária expandida (`npm test`, incluindo `funnel-metrics.test.ts` e `rate-limit.test.ts`) e build de produção (`npm run build`).
+  2. Teste real contra servidor local (`npx next start`) criando um restaurante japonês na Liberdade (*Sushi Mais Liberdade*), chamando `POST /api/ai/diagnose` (`v1.3`) e inspecionando `GET /api/restaurants/[id]/results` (`ai_runs`, `ecosystem_session_only`, `ecosystem`).
+  3. Limpeza do restaurante, diagnóstico e `ai_runs` de teste no Supabase confirmando preservação exclusiva dos 3 seeds.
+- **Resultado esperado:** Zero erros TypeScript, 19/19 testes unitários aprovados, build limpo, `executive_summary` `v1.3` sem paráfrase mecânica gerado exclusivamente por modelo oficial Gemini (`ai_status: success`), `ecosystem_session_only` sem vazamento de eventos `demo_seed` e banco higienizado com 3 seeds.
+- **Resultado observado:**
+  - `npx tsc --noEmit`: **0 erros**.
+  - `npm test`: **19 passed (19)** em 4 arquivos (`business-rules.test.ts` 11, `fallbacks.test.ts` 2, `funnel-metrics.test.ts` 4, `rate-limit.test.ts` 2).
+  - `npm run build`: **Compiled successfully in 12.6s** (7/7 páginas estáticas + rotas dinâmicas).
+  - Teste ao vivo `POST /api/ai/diagnose` (`v1.3`): **`ai_status: success`**, **`model: gemini:gemini-flash-lite-latest`** registrado em `ai_runs` (zero chamada a OpenRouter/Baidu), `latency_ms: 4893`, `guardrails_adjusted_count: 0`, `executive_summary` de 375 caracteres com cruzamento Culinária × Bairro/Turno × CMV (rolinho primavera/guioza + opt-in de Giftback na mesa).
+  - Separação NSM verificada na resposta de `/results`: `ecosystem_session_only` retornou `{ total_restaurants: 1, qualified: 0, redemptions: 0 }` enquanto `ecosystem` (base completa) retornou `{ total_restaurants: 4, qualified: 1, redemptions: 9 }`.
+  - Limpeza Supabase confirmada: exatamente os 3 restaurantes seed intactos (*Brava Osteria*, *Dona Nena Café & Bistrô*, *Taco & Brasa*).
+- **Status:** `aprovado`
+- **Problema identificado:** `ISS-009` (funil > 100% no QA-11) e `ISS-010` (fallback para OpenRouter/Baidu em `ai_runs`) — ambos resolvidos e validados.
+- **Correção implementada:** `DEC-018` e `DEC-019`.
+- **Evidência ou forma de reprodução:** Executar `npx tsc --noEmit`, `npm test`, `npm run build` e acionar `POST /api/ai/diagnose` em servidor local.
+
 ---
 
 ## Modelo de Registro de Problemas (Issues)
@@ -335,3 +358,26 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 - **Causa raiz:** Confirmada por inspeção pré-deploy das rotas de IA.
 - **Correção implementada:** Exportado `export const maxDuration = 30;` em ambos os Route Handlers de IA (`DEC-017`).
 - **Evidência ou forma de reprodução:** Compilação limpa verificada em `npm run build` após adição da diretiva.
+
+### ISS-009 — Conversão de funil acima de 100% (`views = 1`, `redemptions = 2`) ao simular novo cliente ou chamar `/redeem` diretamente
+
+- **Data:** 2026-11-26
+- **Status:** `resolvido e validado`
+- **Funcionalidade / Módulo afetado:** `MobileRedemptionClient.tsx`, `POST /api/public/campaigns/[campaignId]/redeem`, `src/lib/repositories/results.ts`, `src/lib/repositories/diagnostics.ts`
+- **Problema identificado:** No QA-11, clicar em *"Simular outro cliente na mesa"* apenas limpava o estado local (`setIssuedCoupon(null)`) sem registrar novo evento `view`, gerando `views = 1` e `redemptions = 2` (conversão de `200%`).
+- **Impacto / Risco:** Quebra de integridade analítica no dashboard de resultados e no gráfico de funil.
+- **Causa raiz:** Confirmada — ausência de nova chamada `/view` na simulação de segundo cliente e ausência de guarda `effectiveViews = Math.max(views, redemptions)` no backend/repositório.
+- **Correção implementada:** Adicionada chamada real `POST /view` no botão *"Simular outro cliente na mesa"*, auto-registro de `view` em `POST /redeem` quando `views <= used` e normalização `computeSafeFunnelMetrics` (`src/lib/funnel-metrics.ts`) travando `Visualizações >= Resgates >= Opt-in` e taxas em `[0%, 100%]` (`DEC-019`).
+- **Evidência ou forma de reprodução:** Testes unitários em `src/lib/funnel-metrics.test.ts` (4/4 aprovados) + verificação no build final (`TST-009`).
+
+### ISS-010 — Risco de governança de dados por fallback de IA para modelos gratuitos de terceiros (`openrouter:baidu/ernie-5.5-flash-preview:free`)
+
+- **Data:** 2026-11-26
+- **Status:** `resolvido e validado`
+- **Funcionalidade / Módulo afetado:** `src/lib/ai/client.ts`, `.env.example`, `README.md`
+- **Problema identificado:** Em `ai_runs` do QA-11, a corrida multi-provider encaminhou dados do restaurante para um modelo preview gratuito de terceiro via OpenRouter (`baidu/ernie-5.5-flash-preview:free`).
+- **Impacto / Risco:** Risco de governança/retenção de dados de restaurantes parceiros do iFood e qualidade instável de resposta.
+- **Causa raiz:** Confirmada — inclusão de provedores OpenAI-compatible gratuitos de terceiros na cadeia ativa em `DEC-014`.
+- **Correção implementada:** Removido completamente OpenRouter e provedores gratuitos de terceiros de `src/lib/ai/client.ts`; cadeia restrita aos 2 modelos oficiais da Google Gemini API (`gemini-flash-lite-latest`, `gemini-3.5-flash-lite`) com timeout controlado de `15s` e fallback determinístico local transparente (`DEC-018`).
+- **Evidência ou forma de reprodução:** Validação ao vivo (`TST-009`) registrou exclusivamente `gemini:gemini-flash-lite-latest` em `ai_runs` (`status: success`, `4893ms`).
+

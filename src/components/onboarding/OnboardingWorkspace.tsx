@@ -265,7 +265,7 @@ export function OnboardingWorkspace({
 
       setSuccessMessage(
         data.cloned_from_demo
-          ? `Versão personalizada de "${savedRestaurant.name}" salva na sua conta.`
+          ? "Criamos uma cópia na sua sessão para preservar o exemplo original."
           : `Perfil de "${savedRestaurant.name}" salvo com sucesso.`
       );
       router.refresh();
@@ -874,10 +874,14 @@ export function OnboardingWorkspace({
 
                   <div className="rounded-lg border border-neutral-200/80 bg-white p-3.5">
                     <p className="text-[11px] font-semibold text-[#717171]">
-                      Limite seguro de cupons
+                      Cupons no benefício máximo
                     </p>
                     <p className="mt-1 text-lg font-extrabold text-[#1A1A1A]">
                       {liveMetrics.recommended_coupon_cap} / mês
+                    </p>
+                    <p className="mt-0.5 text-[10px] leading-snug text-[#717171]">
+                      Sobe se o benefício for menor (até{" "}
+                      {liveMetrics.operational_coupon_ceiling}/mês)
                     </p>
                   </div>
                 </div>
@@ -885,7 +889,7 @@ export function OnboardingWorkspace({
                 <div className="rounded-lg border border-neutral-200/80 bg-neutral-50 p-4">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-[#1A1A1A]">
                     <TrendingUp className="h-4 w-4 text-[#EA1D2C]" />
-                    Faturamento potencial estimado
+                    Receita bruta estimada (demo)
                   </div>
                   <p className="mt-1 text-xl font-extrabold text-[#1A1A1A]">
                     {formatBRL(liveMetrics.potential_monthly_capture)}
@@ -895,10 +899,19 @@ export function OnboardingWorkspace({
                     </span>
                   </p>
                   <p className="mt-1.5 text-[11px] leading-relaxed text-[#717171]">
-                    Estimativa de {liveMetrics.idle_capacity_estimate} lugares
-                    livres/mês nos horários selecionados. Capacidade segura para
-                    o salão: até {liveMetrics.operational_coupon_ceiling}{" "}
-                    cupons/mês.
+                    Líquida após incentivos:{" "}
+                    <strong className="text-[#3F3E3E]">
+                      {formatBRL(
+                        Math.max(
+                          0,
+                          liveMetrics.potential_monthly_capture -
+                            liveMetrics.recommended_coupon_cap *
+                              liveMetrics.max_safe_cost_per_redemption
+                        )
+                      )}
+                    </strong>{" "}
+                    • projeção demonstrativa (não incremental). Estimativa de{" "}
+                    {liveMetrics.idle_capacity_estimate} lugares livres/mês.
                   </p>
                 </div>
               </div>

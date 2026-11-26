@@ -1,3 +1,4 @@
+import { computeSafeFunnelMetrics } from "@/lib/funnel-metrics";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AiRunRecord, CampaignStatus } from "@/lib/types";
 import { roundCurrency } from "@/lib/utils";
@@ -59,6 +60,7 @@ export interface RestaurantResultsPayload {
   funnel: FunnelStagePoint[];
   campaigns: CampaignResultRow[];
   ecosystem: EcosystemNsmSummary;
+  ecosystem_session_only: EcosystemNsmSummary;
   ai_runs: AiRunRecord[];
 }
 
@@ -86,14 +88,18 @@ export async function getRestaurantResultsData(params: {
   }
 
   // 2. Consultas do ecossistema (escopo: seed + sessão atual — sem vazar dados de outros visitantes)
-  let ecoRestQuery = supabase.from("restaurants").select("id");
-  let ecoDiagQuery = supabase.from("diagnostics").select("restaurant_id");
+  let ecoRestQuery = supabase
+    .from("restaurants")
+    .select("id, is_demo_seed, session_id");
+  let ecoDiagQuery = supabase
+    .from("diagnostics")
+    .select("restaurant_id, session_id");
   let ecoCampQuery = supabase
     .from("campaigns")
-    .select("id, restaurant_id, status, human_approved");
+    .select("id, restaurant_id, status, human_approved, session_id");
   let ecoEventsQuery = supabase
     .from("campaign_events")
-    .select("campaign_id, restaurant_id, event_type");
+    .select("campaign_id, restaurant_id, event_type, session_id, source");
   let aiRunsQuery = supabase
     .from("ai_runs")
     .select("*")
@@ -144,9 +150,11 @@ export async function getRestaurantResultsData(params: {
     throw new Error(`Erro ao consultar campanhas: ${campError.message}`);
   }
 
-  const restaurantCampaignIds = new Set((campRows ?? []).map((c) => String(c.id)));
+  const restaurantCampaignIds = new Set(
+    (campRows ?? []).map((c) => String(c.id))
+  );
 
-  // Agrupar eventos por campanha
+  // Agrupar eventos por campanha (base completa + apenas sessão atual)
   const eventCountByCampaign = new Map<
     string,
     { views: number; redemptions: number; optIns: number }
@@ -157,9 +165,20 @@ export async function getRestaurantResultsData(params: {
   let ecoOptIns = 0;
   const redeemedCampaignIds = new Set<string>();
 
+  let sessionViews = 0;
+  let sessionRedemptions = 0;
+  let sessionOptIns = 0;
+  const sessionRedeemedCampaignIds = new Set<string>();
+
   for (const ev of ecoEventRows ?? []) {
     const cid = String(ev.campaign_id);
     const type = String(ev.event_type);
+    const evSessionId = ev.session_id ? String(ev.session_id) : null;
+    const evSource = ev.source ? String(ev.source) : "";
+    const isSessionRealEvent =
+      Boolean(sessionId) &&
+      evSessionId === sessionId &&
+      evSource !== "demo_seed";
 
     if (type === "view") ecoViews += 1;
     if (type === "redemption") {
@@ -167,6 +186,15 @@ export async function getRestaurantResultsData(params: {
       redeemedCampaignIds.add(cid);
     }
     if (type === "recurrence_opt_in") ecoOptIns += 1;
+
+    if (isSessionRealEvent) {
+      if (type === "view") sessionViews += 1;
+      if (type === "redemption") {
+        sessionRedemptions += 1;
+        sessionRedeemedCampaignIds.add(cid);
+      }
+      if (type === "recurrence_opt_in") sessionOptIns += 1;
+    }
 
     if (restaurantCampaignIds.has(cid)) {
       const bucket = eventCountByCampaign.get(cid) ?? {
@@ -189,18 +217,19 @@ export async function getRestaurantResultsData(params: {
 
   const campaigns: CampaignResultRow[] = (campRows ?? []).map((row) => {
     const cid = String(row.id);
-    const counts = eventCountByCampaign.get(cid) ?? {
+    const rawCounts = eventCountByCampaign.get(cid) ?? {
       views: 0,
       redemptions: 0,
       optIns: 0,
     };
+    const safeCounts = computeSafeFunnelMetrics(rawCounts);
     const costPerRedemption = Number(row.estimated_cost_per_redemption);
     const budgetLimit = Number(row.budget_limit);
-    const budgetUsed = roundCurrency(counts.redemptions * costPerRedemption);
+    const budgetUsed = roundCurrency(safeCounts.redemptions * costPerRedemption);
 
-    totalViews += counts.views;
-    totalRedemptions += counts.redemptions;
-    totalOptIns += counts.optIns;
+    totalViews += safeCounts.views;
+    totalRedemptions += safeCounts.redemptions;
+    totalOptIns += safeCounts.optIns;
     totalBudgetUsed = roundCurrency(totalBudgetUsed + budgetUsed);
     totalBudgetCeiling = roundCurrency(totalBudgetCeiling + budgetLimit);
 
@@ -215,49 +244,40 @@ export async function getRestaurantResultsData(params: {
       budget_limit: budgetLimit,
       human_approved: Boolean(row.human_approved),
       created_at: String(row.created_at),
-      views: counts.views,
-      redemptions: counts.redemptions,
-      opt_ins: counts.optIns,
-      conversion_rate_pct:
-        counts.views > 0
-          ? roundCurrency((counts.redemptions / counts.views) * 100)
-          : 0,
-      recurrence_opt_in_rate_pct:
-        counts.redemptions > 0
-          ? roundCurrency((counts.optIns / counts.redemptions) * 100)
-          : 0,
+      views: safeCounts.views,
+      redemptions: safeCounts.redemptions,
+      opt_ins: safeCounts.optIns,
+      conversion_rate_pct: safeCounts.conversionRatePct,
+      recurrence_opt_in_rate_pct: safeCounts.recurrenceOptInRatePct,
       budget_used: budgetUsed,
     };
   });
 
-  const conversionRatePct =
-    totalViews > 0 ? roundCurrency((totalRedemptions / totalViews) * 100) : 0;
-  const recurrenceOptInRatePct =
-    totalRedemptions > 0
-      ? roundCurrency((totalOptIns / totalRedemptions) * 100)
-      : 0;
+  const safeRestaurantFunnel = computeSafeFunnelMetrics({
+    views: totalViews,
+    redemptions: totalRedemptions,
+    optIns: totalOptIns,
+  });
 
   const funnel: FunnelStagePoint[] = [
     {
       stage: "Visualizações (QR)",
-      count: totalViews,
-      pctOfViews: totalViews > 0 ? 100 : 0,
+      count: safeRestaurantFunnel.views,
+      pctOfViews: safeRestaurantFunnel.views > 0 ? 100 : 0,
     },
     {
       stage: "Resgates",
-      count: totalRedemptions,
-      pctOfViews: conversionRatePct,
+      count: safeRestaurantFunnel.redemptions,
+      pctOfViews: safeRestaurantFunnel.conversionRatePct,
     },
     {
       stage: "Opt-in Retorno",
-      count: totalOptIns,
-      pctOfViews:
-        totalViews > 0 ? roundCurrency((totalOptIns / totalViews) * 100) : 0,
+      count: safeRestaurantFunnel.optIns,
+      pctOfViews: safeRestaurantFunnel.optInPctOfViews,
     },
   ];
 
-  // Cálculo da North Star Metric (NSM): Taxa de Ativação Qualificada
-  // % de restaurantes acessíveis que possuem campanha ativa aprovada com >= 1 resgate registrado
+  // Cálculo da North Star Metric (NSM) — Base Completa (inclui seeds + sessão atual)
   const totalRestaurants = (ecoRestRows ?? []).length;
   const restaurantsWithDiagSet = new Set(
     (ecoDiagRows ?? []).map((d) => String(d.restaurant_id))
@@ -272,6 +292,45 @@ export async function getRestaurantResultsData(params: {
       totalActiveCampaigns += 1;
       if (redeemedCampaignIds.has(String(camp.id))) {
         qualifiedRestaurantsSet.add(String(camp.restaurant_id));
+      }
+    }
+  }
+
+  // Cálculo da North Star Metric (NSM) — Apenas Sessão Atual (exclui eventos demo_seed e seeds intocados)
+  const sessionRestaurantIds = new Set<string>();
+  for (const rest of ecoRestRows ?? []) {
+    const isSeed = Boolean(rest.is_demo_seed);
+    const restSessionId = rest.session_id ? String(rest.session_id) : null;
+    if (!isSeed && sessionId && restSessionId === sessionId) {
+      sessionRestaurantIds.add(String(rest.id));
+    }
+  }
+
+  const sessionRestaurantsWithDiagSet = new Set<string>();
+  for (const diag of ecoDiagRows ?? []) {
+    const diagSessionId = diag.session_id ? String(diag.session_id) : null;
+    if (sessionId && diagSessionId === sessionId) {
+      const rid = String(diag.restaurant_id);
+      sessionRestaurantsWithDiagSet.add(rid);
+      sessionRestaurantIds.add(rid);
+    }
+  }
+
+  const sessionQualifiedRestaurantsSet = new Set<string>();
+  let sessionActiveCampaigns = 0;
+  for (const camp of ecoCampRows ?? []) {
+    const campSessionId = camp.session_id ? String(camp.session_id) : null;
+    if (!sessionId || campSessionId !== sessionId) continue;
+
+    const rid = String(camp.restaurant_id);
+    sessionRestaurantIds.add(rid);
+
+    const isActiveApproved =
+      camp.status === "active" && Boolean(camp.human_approved);
+    if (isActiveApproved) {
+      sessionActiveCampaigns += 1;
+      if (sessionRedeemedCampaignIds.has(String(camp.id))) {
+        sessionQualifiedRestaurantsSet.add(rid);
       }
     }
   }
@@ -297,6 +356,22 @@ export async function getRestaurantResultsData(params: {
           aiRuns.reduce((acc, r) => acc + r.latency_ms, 0) / aiRuns.length
         )
       : 0;
+  const aiSuccessRatePct =
+    aiRuns.length > 0
+      ? roundCurrency((aiSuccessRuns / aiRuns.length) * 100)
+      : 0;
+
+  const safeEcoFunnel = computeSafeFunnelMetrics({
+    views: ecoViews,
+    redemptions: ecoRedemptions,
+    optIns: ecoOptIns,
+  });
+
+  const safeSessionFunnel = computeSafeFunnelMetrics({
+    views: sessionViews,
+    redemptions: sessionRedemptions,
+    optIns: sessionOptIns,
+  });
 
   const ecosystem: EcosystemNsmSummary = {
     total_restaurants: totalRestaurants,
@@ -307,30 +382,50 @@ export async function getRestaurantResultsData(params: {
         ? roundCurrency((qualifiedRestaurantsSet.size / totalRestaurants) * 100)
         : 0,
     total_active_campaigns: totalActiveCampaigns,
-    total_views: ecoViews,
-    total_redemptions: ecoRedemptions,
-    total_opt_ins: ecoOptIns,
-    ecosystem_conversion_rate_pct:
-      ecoViews > 0 ? roundCurrency((ecoRedemptions / ecoViews) * 100) : 0,
-    ecosystem_opt_in_rate_pct:
-      ecoRedemptions > 0 ? roundCurrency((ecoOptIns / ecoRedemptions) * 100) : 0,
+    total_views: safeEcoFunnel.views,
+    total_redemptions: safeEcoFunnel.redemptions,
+    total_opt_ins: safeEcoFunnel.optIns,
+    ecosystem_conversion_rate_pct: safeEcoFunnel.conversionRatePct,
+    ecosystem_opt_in_rate_pct: safeEcoFunnel.recurrenceOptInRatePct,
     ai_total_runs: aiRuns.length,
     ai_success_runs: aiSuccessRuns,
     ai_fallback_runs: aiFallbackRuns,
-    ai_success_rate_pct:
-      aiRuns.length > 0
-        ? roundCurrency((aiSuccessRuns / aiRuns.length) * 100)
+    ai_success_rate_pct: aiSuccessRatePct,
+    ai_avg_latency_ms: aiAvgLatency,
+  };
+
+  const sessionTotalRestaurants = sessionRestaurantIds.size;
+  const ecosystemSessionOnly: EcosystemNsmSummary = {
+    total_restaurants: sessionTotalRestaurants,
+    restaurants_with_diagnostic: sessionRestaurantsWithDiagSet.size,
+    qualified_activated_restaurants: sessionQualifiedRestaurantsSet.size,
+    nsm_qualified_activation_rate_pct:
+      sessionTotalRestaurants > 0
+        ? roundCurrency(
+            (sessionQualifiedRestaurantsSet.size / sessionTotalRestaurants) *
+              100
+          )
         : 0,
+    total_active_campaigns: sessionActiveCampaigns,
+    total_views: safeSessionFunnel.views,
+    total_redemptions: safeSessionFunnel.redemptions,
+    total_opt_ins: safeSessionFunnel.optIns,
+    ecosystem_conversion_rate_pct: safeSessionFunnel.conversionRatePct,
+    ecosystem_opt_in_rate_pct: safeSessionFunnel.recurrenceOptInRatePct,
+    ai_total_runs: aiRuns.length,
+    ai_success_runs: aiSuccessRuns,
+    ai_fallback_runs: aiFallbackRuns,
+    ai_success_rate_pct: aiSuccessRatePct,
     ai_avg_latency_ms: aiAvgLatency,
   };
 
   return {
     kpis: {
-      total_views: totalViews,
-      total_redemptions: totalRedemptions,
-      conversion_rate_pct: conversionRatePct,
-      total_opt_ins: totalOptIns,
-      recurrence_opt_in_rate_pct: recurrenceOptInRatePct,
+      total_views: safeRestaurantFunnel.views,
+      total_redemptions: safeRestaurantFunnel.redemptions,
+      conversion_rate_pct: safeRestaurantFunnel.conversionRatePct,
+      total_opt_ins: safeRestaurantFunnel.optIns,
+      recurrence_opt_in_rate_pct: safeRestaurantFunnel.recurrenceOptInRatePct,
       budget_used: totalBudgetUsed,
       budget_ceiling:
         totalBudgetCeiling > 0 ? totalBudgetCeiling : monthlyPromoBudget,
@@ -339,6 +434,7 @@ export async function getRestaurantResultsData(params: {
     funnel,
     campaigns,
     ecosystem,
+    ecosystem_session_only: ecosystemSessionOnly,
     ai_runs: aiRuns,
   };
 }

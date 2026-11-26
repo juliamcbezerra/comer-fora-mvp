@@ -13,8 +13,8 @@ Registro evolutivo dos prompts utilizados nos agentes de IA do projeto **Comer F
 
 | Agente | Rota | Modelo / Temperatura | Versão Atual | Status |
 |---|---|---|---|---|
-| `diagnostic_strategist` | `POST /api/ai/diagnose` | Multi-Provider (`openrouter`/`mistral`/`cerebras`/`groq` → `gemini` Flash/Gemma) / `0.2` | `v1.2` | Validado em execução real (`ai_status: success` em 2 restaurantes distintos) |
-| `creative_activator` | `POST /api/ai/generate-kit` | Multi-Provider (`openrouter`/`mistral`/`cerebras`/`groq` → `gemini` Flash/Gemma) / `0.5` | `v1.1` | Validado em execução real (`ai_status: success`) |
+| `diagnostic_strategist` | `POST /api/ai/diagnose` | Google Gemini API oficial (`gemini-flash-lite-latest` / `gemini-3.5-flash-lite`) / `0.2` | `v1.3` | Validado em execução real (`ai_status: success`, `gemini:gemini-flash-lite-latest`, `4893ms`) |
+| `creative_activator` | `POST /api/ai/generate-kit` | Google Gemini API oficial (`gemini-flash-lite-latest` / `gemini-3.5-flash-lite`) / `0.5` | `v1.1` | Validado em execução real (`ai_status: success`) |
 
 ---
 
@@ -108,3 +108,25 @@ Registro evolutivo dos prompts utilizados nos agentes de IA do projeto **Comer F
 - **Resultado observado:** *Resultado Comprovado em 2 restaurantes distintos:*
   - **Taco & Brasa (`gemini:gemini-flash-lite-latest`, `7988ms`, `ai_status: success`):** citou Vila Madalena, ticket R$ 72, almoço seg–qui, **9 resgates com 50% de conversão e 55,6% de opt-in de retorno**, Instagram e recomendou displays de mesa com porções de nachos.
   - **Dona Nena Café & Bistrô (`gemini:gemini-3.5-flash-lite`, `7783ms`, `ai_status: success`):** citou Cafeteria & Brunch em Moema, ticket R$ 54, tardes ter–qui, primeira ativação, placa no caixa, benefício de até R$ 8,10 e recomendou sobremesa cortesia ou café especial.
+
+---
+
+### PRM-006 — `diagnostic_strategist` v1.3
+
+- **Data:** 2026-11-26
+- **Etapa do desenvolvimento:** Auditoria Pré-Entrega — Elevação da Qualidade Analítica do Agente 1 + Governança Gemini Oficial (`DEC-018`)
+- **Objetivo do prompt:** Substituir a paráfrase mecânica de campos do formulário por raciocínio comercial e gastronômico genuíno que justifique o uso de LLM, cruzando culinária × dinâmica do bairro/turno × mecânica de baixo CMV, distinguindo ativação presencial vs. recorrência (Giftback) e aplicando diagnóstico causal de funil quando houver histórico real.
+- **Prompt utilizado ou referência ao seu conteúdo:** `src/lib/ai/prompts.ts` (`DIAGNOSTIC_SYSTEM_INSTRUCTION` e `buildDiagnosticUserPrompt`, versão `v1.3`), rodando exclusivamente na Google Gemini API oficial (`gemini-flash-lite-latest` / `gemini-3.5-flash-lite`, `temperature: 0.2`, timeout `15s`).
+- **Problema identificado na resposta:** Na `v1.2`, em primeiras ativações (ex.: restaurante japonês na Liberdade), o `executive_summary` ainda tendia a iniciar recitando dados do cadastro (*"O [Restaurante] na [Bairro] tem ticket de R$ X e sofre ociosidade em [dias]..."*), informação já visível nos cards superiores.
+- **Alteração realizada:**
+  1. Proibição explícita de paráfrase mecânica com exemplos negativos no system prompt.
+  2. Cruzamento obrigatório de 3 dimensões (Culinária × Contexto do Bairro/Turno × Mecânica de Margem com item nativo de alto valor percebido e baixo CMV).
+  3. Distinção explícita de canal: na mesa, a cortesia de baixo CMV serve para ativar o iFood Comer Fora na hora e capturar opt-in de Giftback para trazer o cliente de volta nos dias ociosos.
+  4. Matriz de diagnóstico causal de funil quando `include_performance = true` (muitas views + poucos resgates → oferta/pitch; bons resgates + baixo opt-in → reforçar gancho Giftback; alto resgate + alto opt-in → escalar turno ou reduzir custo unitário).
+  5. Tom de consultor comercial sênior ("você"/"sua casa"), sem clichês, até `520` caracteres (2–3 frases), estendendo o mesmo rigor de especificidade culinária para `bottlenecks` e `opportunities`.
+- **Motivo da alteração:** Elevar o valor percebido da IA generativa frente a templates determinísticos e garantir recomendações acionáveis e aderentes ao negócio real de cada parceiro.
+- **Resultado observado:** *Resultado Comprovado em teste real local (primeira ativação — restaurante japonês na Liberdade, ticket R$ 100, 46 lugares, terça/quarta jantar):*
+  - **Modelo registrado em `ai_runs`:** `gemini:gemini-flash-lite-latest` (`status: success`, `latency_ms: 4893`, `prompt_version: v1.3`, `guardrails_adjusted_count: 0`, zero uso de OpenRouter/Baidu).
+  - **`executive_summary` gerado (375 chars):** *"Na Liberdade, o jantar de terça e quarta sofre com o esvaziamento pela forte concorrência local de rodízios e praças corporativas que fecham cedo. Para virar esse jogo, use um rolinho primavera ou guioza de baixo CMV via iFood Comer Fora para atrair o cliente que já está circulando no bairro e capturar o opt-in de Giftback na mesa, garantindo o retorno dele nos dias frios."*
+  - **Especificidade em gargalos/oportunidades:** apontou desperdício de insumos frescos nas noites frias e recomendou guioza/sunomono para estimular combinados principais preservando margem de CMV.
+
