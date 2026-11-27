@@ -425,3 +425,14 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 - **Correção implementada:** Removido completamente OpenRouter e provedores gratuitos de terceiros de `src/lib/ai/client.ts`; cadeia restrita aos 2 modelos oficiais da Google Gemini API (`gemini-flash-lite-latest`, `gemini-3.5-flash-lite`) com timeout controlado de `15s` e fallback determinístico local transparente (`DEC-018`).
 - **Evidência ou forma de reprodução:** Validação ao vivo (`TST-009`) registrou exclusivamente `gemini:gemini-flash-lite-latest` em `ai_runs` (`status: success`, `4893ms`).
 
+### ISS-011 — Validação Zod do webhook rejeitava `approved_at` com offset `+00:00` retornado pelo PostgreSQL/Supabase
+
+- **Data:** 2026-11-27
+- **Status:** `resolvido e validado`
+- **Funcionalidade / Módulo afetado:** `src/lib/automation/schemas.ts`, `src/lib/automation/webhook.ts`
+- **Problema identificado:** No teste ao vivo na Vercel contra o Custom Webhook do Make, `PATCH /api/campaigns/[campaignId]` retornou `webhook.delivered = false` com `"Payload de ativação rejeitado pela validação de contrato"`.
+- **Impacto / Risco:** Impedia o disparo do webhook de ativação para o Make (sem afetar a ativação local da campanha no Supabase).
+- **Causa raiz:** Confirmada — o PostgREST/Supabase retorna colunas `timestamptz` com sufixo `+00:00` (ex.: `2026-11-27T20:04:00.123456+00:00`), e `z.string().datetime()` no Zod v3 exige sufixo `Z` a menos que `{ offset: true }` seja informado.
+- **Correção implementada:** Atualizado `activationWebhookPayloadSchema` para `z.string().datetime({ offset: true })`, normalizado `approved_at` para ISO UTC (`Z`) em `buildActivationWebhookPayload` e adicionado teste de regressão em `src/lib/automation/automation.test.ts`.
+- **Evidência ou forma de reprodução:** `npm run typecheck` e `npm test` aprovados com teste dedicado para `2026-11-27T20:04:00.123456+00:00`.
+

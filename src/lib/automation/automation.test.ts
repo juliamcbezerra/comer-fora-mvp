@@ -174,6 +174,26 @@ describe("Webhook de Ativação (Make native API Key, fail-closed e não bloquea
     expect(parsedBody.success).toBe(true);
   });
 
+  it("normaliza e aceita approved_at com offset +00:00 retornado pelo Supabase (PostgreSQL timestamptz)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("Accepted", { status: 200 }));
+
+    const result = await dispatchCampaignActivationWebhook(
+      makeCampaign({ approved_at: "2026-11-27T20:04:00.123456+00:00" }),
+      {
+        env: {
+          MAKE_WEBHOOK_URL: "https://hook.us2.make.com/abc123",
+          AUTOMATION_WEBHOOK_SECRET: "make-api-key-secreta",
+          AUTOMATION_ALLOWED_SESSION_ID: ALLOWED_SESSION,
+        },
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      }
+    );
+
+    expect(result.delivered).toBe(true);
+    expect(result.http_status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("Cenário 2: trata autenticação inválida (HTTP 401 do Make) sem bloquear a ativação", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
 

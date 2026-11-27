@@ -38,7 +38,7 @@ export const activationWebhookPayloadSchema = z.object({
   event: z.literal("campaign_activated"),
   mode: z.literal("demonstrativo"),
   idempotency_key: z.string().trim().min(8).max(180),
-  sent_at: z.string().datetime(),
+  sent_at: z.string().datetime({ offset: true }),
   session_id: z.string().uuid(),
   campaign: z.object({
     id: z.string().uuid(),
@@ -49,7 +49,7 @@ export const activationWebhookPayloadSchema = z.object({
     coupon_limit: z.number().int().positive(),
     budget_limit: z.number().positive(),
     estimated_cost_per_redemption: z.number().positive(),
-    approved_at: z.string().datetime(),
+    approved_at: z.string().datetime({ offset: true }),
   }),
 });
 

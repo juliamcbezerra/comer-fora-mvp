@@ -52,7 +52,11 @@ export function buildActivationWebhookPayload(
   campaign: CampaignRecord,
   now: Date = new Date()
 ): ActivationWebhookPayload {
-  const approvedAt = campaign.approved_at ?? now.toISOString();
+  const rawApprovedAt = campaign.approved_at ?? now.toISOString();
+  const parsedApprovedMs = Date.parse(rawApprovedAt);
+  const approvedAt = Number.isFinite(parsedApprovedMs)
+    ? new Date(parsedApprovedMs).toISOString()
+    : now.toISOString();
   const idempotencyKey = `activation:${campaign.id}:${approvedAt}`;
 
   return {
