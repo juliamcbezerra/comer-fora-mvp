@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { dispatchCampaignActivationWebhook } from "@/lib/automation/webhook";
 import { getAccessibleCampaignById } from "@/lib/repositories/diagnostics";
 import { campaignUpdateSchema } from "@/lib/schemas";
 import { attachSessionCookie, getOrCreateSessionId } from "@/lib/session";
@@ -7,71 +8,6 @@ import type { CampaignRecord } from "@/lib/types";
 
 interface RouteContext {
   params: Promise<{ campaignId: string }>;
-}
-
-interface WebhookDispatchResult {
-  configured: boolean;
-  delivered: boolean;
-  note: string;
-}
-
-async function dispatchOptionalActivationWebhook(
-  campaign: CampaignRecord
-): Promise<WebhookDispatchResult> {
-  const webhookUrl = process.env.N8N_WEBHOOK_URL?.trim();
-  if (!webhookUrl) {
-    return {
-      configured: false,
-      delivered: false,
-      note: "N8N_WEBHOOK_URL não configurado — ativação concluída localmente em modo demonstrativo.",
-    };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4_000);
-
-    try {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          event: "campaign_activated_demo",
-          mode: "demonstrativo",
-          campaign_id: campaign.id,
-          restaurant_id: campaign.restaurant_id,
-          title: campaign.title,
-          target_window: campaign.target_window,
-          coupon_limit: campaign.coupon_limit,
-          budget_limit: campaign.budget_limit,
-          approved_at: campaign.approved_at,
-        }),
-      });
-
-      if (!res.ok) {
-        return {
-          configured: true,
-          delivered: false,
-          note: `Webhook respondeu HTTP ${res.status} (ativação preservada sem bloqueio).`,
-        };
-      }
-
-      return {
-        configured: true,
-        delivered: true,
-        note: "Webhook demonstrativo disparado com sucesso.",
-      };
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch {
-    return {
-      configured: true,
-      delivered: false,
-      note: "Webhook indisponível ou timeout (ativação preservada sem bloqueio).",
-    };
-  }
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -217,8 +153,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       created_at: String(updated.created_at),
     };
 
-    const webhookResult = shouldActivate
-      ? await dispatchOptionalActivationWebhook(campaign)
+    // Dispara webhook apenas na transição para 'active' (evita redisparo duplicado em edições futuras)
+    const isNewActivation = shouldActivate && existing.status !== "active";
+    const webhookResult = isNewActivation
+      ? await dispatchCampaignActivationWebhook(campaign)
       : null;
 
     const response = NextResponse.json({

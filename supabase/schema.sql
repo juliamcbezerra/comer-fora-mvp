@@ -97,6 +97,34 @@ create table if not exists public.ai_runs (
   created_at timestamptz not null default now()
 );
 
+-- 6. CAMPAIGN AUTOMATION LOGS (Trilha auditável do Campaign Pulse)
+create table if not exists public.campaign_automation_logs (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  session_id text not null,
+  alert_type text not null check (
+    alert_type in (
+      'ACTIVATION_REGISTERED',
+      'NO_REDEMPTIONS',
+      'LOW_CONVERSION',
+      'BUDGET_WARNING',
+      'HEALTHY'
+    )
+  ),
+  message text not null,
+  recommendation text,
+  metrics_snapshot jsonb not null default '{}'::jsonb,
+  notification_channel text not null default 'none' check (
+    notification_channel in ('none', 'email', 'slack', 'discord', 'webhook')
+  ),
+  notification_status text not null default 'recorded' check (
+    notification_status in ('recorded', 'sent', 'failed', 'skipped')
+  ),
+  idempotency_key text not null unique,
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================================
 -- ÍNDICES
 -- ============================================================================
@@ -110,6 +138,9 @@ create index if not exists idx_campaign_events_campaign_type on public.campaign_
 create index if not exists idx_campaign_events_restaurant_created on public.campaign_events (restaurant_id, created_at desc);
 create index if not exists idx_ai_runs_created on public.ai_runs (created_at desc);
 create index if not exists idx_ai_runs_restaurant_id on public.ai_runs (restaurant_id);
+create index if not exists idx_campaign_automation_logs_campaign_created on public.campaign_automation_logs (campaign_id, created_at desc);
+create index if not exists idx_campaign_automation_logs_session_created on public.campaign_automation_logs (session_id, created_at desc);
+create index if not exists idx_campaign_automation_logs_alert_created on public.campaign_automation_logs (alert_type, created_at desc);
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (DEFAULT-DENY PARA CLIENTE PÚBLICO)
@@ -119,6 +150,7 @@ alter table public.diagnostics enable row level security;
 alter table public.campaigns enable row level security;
 alter table public.campaign_events enable row level security;
 alter table public.ai_runs enable row level security;
+alter table public.campaign_automation_logs enable row level security;
 
 -- Nenhuma policy permissiva para anon/authenticated é criada intencionalmente.
 -- Apenas a service_role (usada exclusivamente no servidor Next.js) opera nas tabelas.

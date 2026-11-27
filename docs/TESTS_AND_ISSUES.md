@@ -25,6 +25,8 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 | TST-007 | Dashboard de resultados, funil real, visão NSM e loop de recorrência | Persistência / IA | `aprovado` |
 | TST-008 | Segurança (zero chaves expostas no frontend), auditoria QA E2E completa e build final de produção (`npm run build`) | Segurança / APIs | `aprovado` |
 | TST-009 | Passe P0+P1 pré-entrega: integridade do funil (`<= 100%`), governança Gemini oficial, isolamento de seeds, rate limiting (`429`), NSM por escopo e prompt `v1.3` | IA / APIs / Riscos / UX | `aprovado` |
+| TST-010 | Automação Cloud (Campaign Pulse / Make): autenticação fail-closed, webhook outgoing, motor determinístico, endpoints internos, isolamento cross-session e proteção do Data Store (Vitest + typecheck + build) | APIs / Segurança / Riscos | `aprovado` |
+| TST-011 | Validação E2E ponta a ponta em instância real do Make.com (Cenário 1 + Cenário 2 + Data Store + `campaign_automation_logs` no Supabase) | Integração Externa / E2E | `pendente` |
 
 ---
 
@@ -248,6 +250,48 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 - **Problema identificado:** `ISS-009` (funil > 100% no QA-11) e `ISS-010` (fallback para OpenRouter/Baidu em `ai_runs`) — ambos resolvidos e validados.
 - **Correção implementada:** `DEC-018` e `DEC-019`.
 - **Evidência ou forma de reprodução:** Executar `npx tsc --noEmit`, `npm test`, `npm run build` e acionar `POST /api/ai/diagnose` em servidor local.
+
+### TST-010 — Automação Cloud (Campaign Pulse / Make): Autenticação, Webhook, Motor Determinístico e Endpoints Internos
+
+- **Data:** 2026-11-27
+- **Tipo:** Resultado Comprovado (validação automatizada local; E2E real no Make permanece em `TST-011`)
+- **Funcionalidade testada:** `src/lib/automation/auth.ts`, `src/lib/automation/schemas.ts`, `src/lib/automation/campaign-pulse.ts`, `src/lib/automation/webhook.ts`, `src/lib/repositories/campaign-monitor.ts`, `GET /api/internal/campaign-monitor`, `POST /api/internal/campaign-monitor/alerts` e `PATCH /api/campaigns/[campaignId]`.
+- **Cenário de teste (13 cenários cobertos em 16 testes automatizados):**
+  1. Webhook outgoing com payload válido, `x-make-apikey`, `X-Idempotency-Key` e `X-Automation-Timestamp`, priorizando `MAKE_WEBHOOK_URL` e sem fallback para `N8N_WEBHOOK_URL`.
+  2. Autenticação inválida do webhook (`HTTP 401` do Make) absorvida sem bloquear a ativação.
+  3. Bloqueio fail-closed quando `AUTOMATION_ALLOWED_SESSION_ID` está ausente e rejeição Zod de payload inválido.
+  4. Segredo ausente/incorreto (`401`), timestamp expirado (`401`) e env vars ausentes (`503` fail-closed).
+  5. Falha temporária e timeout do webhook sem lançar exceção.
+  6. `GET /api/internal/campaign-monitor` retornando apenas campanhas ativas e aprovadas com `estimated_budget_used` e `estimated_budget_utilization_pct`.
+  7. Tentativas de acesso cross-session via `session_id` (`403`) ou `campaign_id` de outra sessão (`not_found` no `GET` e `404` no `POST`).
+  8. Exclusão de eventos `source = 'demo_seed'` em campanhas criadas por visitantes.
+  9. Deduplicação de alertas por `idempotency_key` (`201 recorded: true` seguido de `200 deduplicated: true`).
+  10. Campanhas `paused`/`completed` excluídas da listagem ativa, sinalizadas com `campaign_monitor_state: "inactive"` + `should_untrack: true` na consulta por ID e rejeitadas com `409` em `POST /alerts`.
+  11. Falha temporária de consulta (`500`/`503`/timeout) validando que `shouldUntrackFromOperationalIndex` retorna `false` e nunca autoriza limpeza indevida do Data Store.
+  12. Rejeição `400` para `notification_status: "sent"`/`"failed"` quando `notification_channel: "none"`, aceitando `"recorded"` para registro interno.
+  13. Registro válido de alerta em `campaign_automation_logs` confirmando zero mutações na tabela `campaigns`.
+- **Resultado esperado:** Zero erros TypeScript, todos os testes unitários e de rotas internos aprovados e build de produção limpo.
+- **Resultado observado:**
+  - `npm run typecheck` (`tsc --noEmit`): **0 erros** (código 0).
+  - `npm test` (`vitest run`): **6 arquivos, 35 passed (35)** em 2.73s (`automation.test.ts` 11, `route.test.ts` 5, `business-rules.test.ts` 11, `funnel-metrics.test.ts` 4, `fallbacks.test.ts` 2, `rate-limit.test.ts` 2).
+  - `npm run build` (`next build`): **Compiled successfully in 18.5s**, 9/9 páginas estáticas geradas, rotas `/api/internal/campaign-monitor` e `/api/internal/campaign-monitor/alerts` compiladas sem erros.
+- **Status:** `aprovado`
+- **Problema identificado:** Nenhum bloqueio estrutural (ajustada apenas tipagem `Record<string, string | undefined>` em vez de `NodeJS.ProcessEnv` nos helpers de ambiente para compatibilidade com `tsc --noEmit`).
+- **Correção implementada:** `DEC-020`.
+- **Evidência ou forma de reprodução:** Executar `npm run typecheck`, `npm test` e `npm run build`.
+
+### TST-011 — Validação Ponta a Ponta em Instância Real do Make.com (Campaign Activation + Campaign Pulse)
+
+- **Data:** 2026-11-27
+- **Tipo:** Pendente (aguardando aplicação da migration no Supabase e configuração na conta real do Make)
+- **Funcionalidade testada:** Fluxo completo real: ativação HITL → *Custom Webhook* Make (API Key nativa) → Data Store → `POST /alerts` (`recorded`/`sent`) → execução periódica do Cenário 2 (`GET /api/internal/campaign-monitor` + Router + `POST /alerts` + deduplicação).
+- **Cenário de teste:** Aplicar `supabase/migrations/20261127_campaign_automation_logs.sql`, configurar `MAKE_WEBHOOK_URL`, `AUTOMATION_WEBHOOK_SECRET`, `AUTOMATION_API_SECRET` e `AUTOMATION_ALLOWED_SESSION_ID`, criar os 2 cenários no Make e validar execução real e consumo observado de créditos.
+- **Resultado esperado:** Execução sem erros nos 2 cenários no histórico do Make, persistência real em `campaign_automation_logs` e confirmação de consumo observado dentro da cota da conta.
+- **Resultado observado:** Ainda não executado em instância real do Make.
+- **Status:** `pendente`
+- **Problema identificado:** N/A.
+- **Correção implementada:** N/A.
+- **Evidência ou forma de reprodução:** Seguir a seção 6 do `README.md` após aplicar a migration no Supabase e configurar a conta Make.
 
 ---
 

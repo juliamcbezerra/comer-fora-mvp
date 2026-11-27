@@ -36,7 +36,7 @@ Registro contínuo das decisões arquiteturais, técnicas, de produto, de IA e d
 | DEC-003 | 2026-11-25 | Arquitetura de 2 agentes Gemini com JSON estruturado, Zod e fallback | Prompts / APIs / Riscos | Confirmada |
 | DEC-004 | 2026-11-25 | Persistência real e observabilidade em Supabase (PostgreSQL) | APIs / Arquitetura | Confirmada |
 | DEC-005 | 2026-11-25 | Segurança server-side, governança humana (HITL), privacidade e marca | APIs / Riscos | Confirmada |
-| DEC-006 | 2026-11-25 | Integração opcional de automação via webhook (n8n) não bloqueante | APIs / Riscos | Confirmada |
+| DEC-006 | 2026-11-25 | Integração opcional de automação via webhook (n8n) não bloqueante | APIs / Riscos | Substituída por DEC-020 |
 | DEC-007 | 2026-11-25 | Isolamento por sessão demonstrativa (`HttpOnly`) e RLS default-deny | APIs / Riscos | Confirmada |
 | DEC-008 | 2026-11-25 | Seed idempotente e validação automatizada de regras com Vitest | Arquitetura / Riscos | Confirmada |
 | DEC-009 | 2026-11-25 | Clone-on-edit em restaurantes demo e normalização defensiva de `SUPABASE_URL` | APIs / Riscos | Confirmada |
@@ -50,6 +50,7 @@ Registro contínuo das decisões arquiteturais, técnicas, de produto, de IA e d
 | DEC-017 | 2026-11-25 | Páginas amigáveis de erro (`not-found`/`error`), ajuste responsivo `375px` e `maxDuration = 30` para Vercel | UX / APIs / Riscos | Confirmada |
 | DEC-018 | 2026-11-26 | Governança de IA exclusivamente via Gemini API oficial + fallback determinístico local (remoção de OpenRouter/Baidu) | APIs / Prompts / Riscos | Confirmada |
 | DEC-019 | 2026-11-26 | Integridade analítica do funil (`views >= redemptions >= opt-in`), isolamento de eventos em campanhas seed, rate limiting e transparência de KPIs/NSM | APIs / Riscos / UX | Confirmada |
+| DEC-020 | 2026-11-27 | Arquitetura de automação agnóstica (Campaign Pulse via Make.com), fail-closed por sessão controlada, 2 endpoints internos e `campaign_automation_logs` | APIs / Arquitetura / Riscos | Confirmada |
 
 ---
 
@@ -365,6 +366,26 @@ Registro contínuo das decisões arquiteturais, técnicas, de produto, de IA e d
 - **Alternativas consideradas:** Rate limiting distribuído com Redis externo (descartado para manter zero infraestrutura adicional no MVP; documentado como evolução de produção).
 - **Justificativa técnica e de negócio:** Elimina distorções analíticas (conversão > 100%, NSM inflada por seed), protege a experiência concorrente de avaliadores no link público e aumenta a credibilidade executiva dos números exibidos ao dono do restaurante.
 - **Impactos e limitações:** O rate limiter em memória atua por instância serverless (adequado para proteção leve do protótipo; em escala de produção evoluiria para Upstash/Redis).
+
+---
+
+## DEC-020 — Arquitetura de automação agnóstica (Campaign Pulse via Make.com), fail-closed por sessão controlada, 2 endpoints internos e `campaign_automation_logs`
+
+- **Data:** 2026-11-27
+- **Status:** Confirmada (substitui `DEC-006`)
+- **Dimensão (Slide):** APIs / Arquitetura / Riscos
+- **Contexto e problema:** A integração inicial prevista em `DEC-006` disparava apenas um webhook simples (`N8N_WEBHOOK_URL`) sem autenticação outgoing, sem proteção contra redisparo, sem endpoints de monitoramento periódico e acoplada a uma ferramenta específica (n8n) que exigiria servidor local/próprio. Para monitorar campanhas aprovadas na nuvem com Make.com preservando segurança, isolamento de sessão e controle de créditos, era necessário desacoplar a camada de automação.
+- **Decisão tomada:**
+  1. **Desacoplamento e remoção do fallback n8n (`src/lib/automation/webhook.ts`):** priorizar `MAKE_WEBHOOK_URL` (com alternativa genérica `AUTOMATION_WEBHOOK_URL`), removendo qualquer fallback automático para `N8N_WEBHOOK_URL` para evitar disparos acidentais. Adotar autenticação nativa por API Key do *Custom Webhook* do Make (`x-make-apikey` via `AUTOMATION_WEBHOOK_SECRET`), validação Zod do payload versionado (`contract_version: "1.0"`), disparo somente na transição para `active`, timeout de `4s` e tratamento não bloqueante.
+  2. **Segurança fail-closed e isolamento por sessão controlada (`src/lib/automation/auth.ts`):** exigir `AUTOMATION_API_SECRET` (comparação em tempo constante via SHA-256 + `timingSafeEqual`) e `AUTOMATION_ALLOWED_SESSION_ID` (UUID da sessão demonstrativa controlada). A ausência de qualquer uma dessas variáveis bloqueia disparos e responde `503`. `session_id` é tratado exclusivamente como escopo, nunca como credencial; tentativas cross-session retornam `403`/`404`.
+  3. **API enxuta com 2 endpoints internos (`/api/internal/campaign-monitor` e `/api/internal/campaign-monitor/alerts`):** eliminado o endpoint redundante `/register` (confirmações de ativação e alertas usam `/alerts` com `notification_channel` e `notification_status` validados estritamente: `recorded` | `sent` | `failed` | `skipped`). Nenhum endpoint interno altera `campaigns` (status, orçamento, desconto ou aprovação continuam sob guardrails determinísticos + HITL).
+  4. **Tabela aditiva `campaign_automation_logs` (`supabase/migrations/20261127_campaign_automation_logs.sql`):** RLS *default-deny*, `idempotency_key` única contra duplicidade/replay, sem alterar tabelas existentes.
+  5. **Motor determinístico e honestidade financeira (`src/lib/automation/campaign-pulse.ts`):** classifica `BUDGET_WARNING`, `NO_REDEMPTIONS`, `LOW_CONVERSION` e `HEALTHY` com thresholds configuráveis (`PULSE_*`, documentados como hipóteses de produto), excluindo eventos `source = 'demo_seed'`, usando nomenclatura explícita `estimated_budget_used` / `estimated_budget_utilization_pct` e expondo `campaign_monitor_state` + `should_untrack` para impedir limpeza indevida do Data Store do Make em falhas temporárias.
+- **Alternativas consideradas:**
+  - Manter n8n self-hosted com 3 endpoints (`register`, `GET`, `alerts`) — descartada pela dependência de infraestrutura local/própria e redundância do endpoint `register`.
+  - Permitir consulta global de todas as sessões com um segredo compartilhado único — descartada pelo risco de vazamento cross-session.
+- **Justificativa técnica e de negócio:** Viabiliza automação 100% cloud compatível com o plano gratuito do Make (iniciando com ciclo econômico de 12h), mantendo contratos HTTP independentes da ferramenta e proteção rigorosa contra vazamento de dados e alterações indevidas de campanhas.
+- **Impactos e limitações:** No MVP, o segredo compartilhado fica restrito a uma única sessão demonstrativa (`AUTOMATION_ALLOWED_SESSION_ID`); em produção multi-tenant seria substituído por credenciais escopadas por conta/restaurante. A comprovação ponta a ponta depende da configuração e execução em uma instância real do Make.
 
 
 
