@@ -26,7 +26,7 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 | TST-008 | Segurança (zero chaves expostas no frontend), auditoria QA E2E completa e build final de produção (`npm run build`) | Segurança / APIs | `aprovado` |
 | TST-009 | Passe P0+P1 pré-entrega: integridade do funil (`<= 100%`), governança Gemini oficial, isolamento de seeds, rate limiting (`429`), NSM por escopo e prompt `v1.3` | IA / APIs / Riscos / UX | `aprovado` |
 | TST-010 | Automação Cloud (Campaign Pulse / Make): autenticação fail-closed, webhook outgoing, motor determinístico, endpoints internos, isolamento cross-session e proteção do Data Store (Vitest + typecheck + build) | APIs / Segurança / Riscos | `aprovado` |
-| TST-011 | Validação E2E ponta a ponta em instância real do Make.com (Cenário 1 + Cenário 2 + Data Store + `campaign_automation_logs` no Supabase) | Integração Externa / E2E | `pendente` |
+| TST-011 | Validação E2E ponta a ponta em instância real do Make.com (Cenário 1 + Cenário 2 + Data Store + `campaign_automation_logs` no Supabase) | Integração Externa / E2E | `aprovado` |
 
 ---
 
@@ -283,15 +283,25 @@ Registro contínuo de testes executados, evidências, problemas encontrados e co
 ### TST-011 — Validação Ponta a Ponta em Instância Real do Make.com (Campaign Activation + Campaign Pulse)
 
 - **Data:** 2026-11-27
-- **Tipo:** Pendente (aguardando aplicação da migration no Supabase e configuração na conta real do Make)
-- **Funcionalidade testada:** Fluxo completo real: ativação HITL → *Custom Webhook* Make (API Key nativa) → Data Store → `POST /alerts` (`recorded`/`sent`) → execução periódica do Cenário 2 (`GET /api/internal/campaign-monitor` + Router + `POST /alerts` + deduplicação).
-- **Cenário de teste:** Aplicar `supabase/migrations/20261127_campaign_automation_logs.sql`, configurar `MAKE_WEBHOOK_URL`, `AUTOMATION_WEBHOOK_SECRET`, `AUTOMATION_API_SECRET` e `AUTOMATION_ALLOWED_SESSION_ID`, criar os 2 cenários no Make e validar execução real e consumo observado de créditos.
-- **Resultado esperado:** Execução sem erros nos 2 cenários no histórico do Make, persistência real em `campaign_automation_logs` e confirmação de consumo observado dentro da cota da conta.
-- **Resultado observado:** Ainda não executado em instância real do Make.
-- **Status:** `pendente`
-- **Problema identificado:** N/A.
-- **Correção implementada:** N/A.
-- **Evidência ou forma de reprodução:** Seguir a seção 6 do `README.md` após aplicar a migration no Supabase e configurar a conta Make.
+- **Tipo:** Resultado Comprovado
+- **Funcionalidade testada:** Fluxo completo em produção (Vercel + Make.com Free + Supabase): ativação HITL → *Custom Webhook* Make (API Key nativa `x-make-apikey`) → Data Store `campaign_pulse_index` → `POST /api/internal/campaign-monitor/alerts` (`ACTIVATION_REGISTERED`, `notification_status = 'recorded'`) → visualizações reais em `/r/[campaignId]` → execução do Cenário 2 (`GET /api/internal/campaign-monitor` + Router + `POST /alerts` gravando `NO_REDEMPTIONS`) → reexecução imediata validando deduplicação.
+- **Cenário de teste:**
+  1. Aplicação da migration `supabase/migrations/20261127_campaign_automation_logs.sql` com RLS *default-deny* confirmado no Supabase Studio.
+  2. Configuração de `MAKE_WEBHOOK_URL`, `AUTOMATION_WEBHOOK_SECRET`, `AUTOMATION_API_SECRET` e `AUTOMATION_ALLOWED_SESSION_ID` em *Production* na Vercel.
+  3. Ativação HITL de campanha real na sessão autorizada acionando o Cenário 1 (`Campaign Activation`, trigger *Instant*).
+  4. Abertura do link `/r/[campaignId]` para atingir `>= 5` visualizações reais sem resgate, seguida de execução manual (`Run once`) do Cenário 2 (`Campaign Pulse`).
+  5. Segunda execução imediata (`Run once`) do Cenário 2 para comprovar prevenção de alertas duplicados e economia de operações.
+- **Resultado esperado:** Ambos os cenários executando com `Success` no histórico do Make, persistência íntegra em `campaign_automation_logs` (2 linhas: `ACTIVATION_REGISTERED` e `NO_REDEMPTIONS`), zero duplicação na reexecução e consumo observado coerente com a estimativa teórica.
+- **Resultado observado:**
+  - **Cenário 1 (`Campaign Activation` — Instant):** `Success` em `1s`, consumo observado de **3 créditos / 3 operações** (`2,0 KB`); registro criado no Data Store `campaign_pulse_index` (`active = true`) e linha `ACTIVATION_REGISTERED` (`notification_status = 'recorded'`) persistida em `campaign_automation_logs`.
+  - **Cenário 2 (`Campaign Pulse` — 1ª execução com alerta `NO_REDEMPTIONS`):** `Success` em `2s`, consumo observado de **3 créditos / 3 operações** (`3,8 KB`); linha `NO_REDEMPTIONS` com mensagem e recomendação persistida em `campaign_automation_logs`.
+  - **Cenário 2 (`Campaign Pulse` — 2ª execução imediata / deduplicação):** `Success` em `< 1s`, consumo observado de **2 créditos / 2 operações** (`2,3 KB`); filtro `already_logged_in_window == false` barrou a Rota B e o Supabase permaneceu com exatamente **2 linhas** (zero duplicidade).
+  - **Proteção de falhas observada ao vivo:** durante o ajuste de mapeamento do Data Store (`Record`), o Error Handler (`Skip`) do `HTTP [2]` absorveu HTTP `400` sem remover nenhum registro do Data Store.
+  - **Consumo observado vs. estimativa teórica:** exatamente alinhado à estimativa teórica por módulo e por bundle (`3 ops` no Cenário 1 sem notificação externa; `3 ops` no Cenário 2 com 1 alerta; `2 ops` no Cenário 2 sem novo alerta para 1 campanha ativa).
+- **Status:** `aprovado`
+- **Problema identificado:** `ISS-011` (offset `+00:00` do Supabase em `approved_at`, corrigido antes da validação final).
+- **Correção implementada:** `ISS-011` (`z.string().datetime({ offset: true })` e normalização UTC em `buildActivationWebhookPayload`).
+- **Evidência ou forma de reprodução:** Histórico real dos 2 cenários ativos no Make.com (Free plan) + linhas auditáveis em `public.campaign_automation_logs` no Supabase.
 
 ---
 
